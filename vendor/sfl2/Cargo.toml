@@ -1,0 +1,7 @@
+[package]
+name = "sfl2"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+lewton = "0.10.2"
