@@ -90,27 +90,30 @@ std::string ReaperApi::projectDirectory() const
     }
 }
 
-std::string ReaperApi::resolveFile(const std::string& path) const
+std::string ReaperApi::resolveFile(const std::string& path, const std::string& subdir) const
 {
     auto resolve = getFunc_ ? reinterpret_cast<ResolveFn>(getFunc_("resolve_fn2")) : nullptr;
     if (!resolve || path.empty())
         return path;
     char out[4096] = { 0 };
-    resolve(path.c_str(), out, sizeof(out), nullptr);
+    resolve(path.c_str(), out, sizeof(out), subdir.empty() ? nullptr : subdir.c_str());
     return out[0] ? out : path;
 }
 
-intptr_t ReaperApi::fileCallback(void* selfPtr, int msg, void* parm)
+intptr_t ReaperApi::fileCallback(void* userdata, int msg, void* parm)
 {
-    auto* self = static_cast<ReaperApi*>(selfPtr);
+    auto* reg = static_cast<Registered*>(userdata);
+    ReaperApi* self = reg->api;
     switch (msg) {
-    case 0: // the file was renamed or copied, e.g. by "copy media to project folder"
+    case 0: // copied or moved, e.g. by "copy all media into project directory"
         if (parm) {
-            self->registeredFile_ = static_cast<const char*>(parm);
-            if (self->onRename_)
-                self->onRename_(self->context_, self->registeredFile_.c_str());
+            reg->file.path = static_cast<const char*>(parm);
+            if (reg->main && self->onRename_)
+                self->onRename_(self->context_, reg->file.path.c_str());
         }
         return 0;
+    case 0x100:
+        return reg->file.subdir.empty() ? 0 : (intptr_t)reg->file.subdir.c_str();
     case 0x101: {
         auto getContext = reinterpret_cast<GetContextFn>(self->getFunc_("clap_get_reaper_context"));
         return getContext ? (intptr_t)getContext(self->host_, kContextFxDsp) : 0;
@@ -122,24 +125,32 @@ intptr_t ReaperApi::fileCallback(void* selfPtr, int msg, void* parm)
     }
 }
 
-void ReaperApi::setProjectFile(const std::string& path)
+void ReaperApi::unregisterAll()
+{
+    for (auto& r : registered_) {
+        void* p[4] = { (void*)r->file.path.c_str(), registeredProject_, r.get(), (void*)&fileCallback };
+        register_("-file_in_project_ex2", p);
+    }
+    registered_.clear();
+    registeredProject_ = nullptr;
+}
+
+void ReaperApi::setProjectFiles(const std::vector<ProjectFile>& files)
 {
     if (!register_)
         return;
-    if (!registeredFile_.empty() && registeredProject_) {
-        void* p[4] = { (void*)registeredFile_.c_str(), registeredProject_, this, (void*)&fileCallback };
-        register_("-file_in_project_ex2", p);
-    }
-    registeredFile_.clear();
-    registeredProject_ = nullptr;
+    unregisterAll();
 
     void* proj = project();
-    if (path.empty() || !proj)
+    if (files.empty() || !proj)
         return;
-    registeredFile_ = path;
     registeredProject_ = proj;
-    void* p[4] = { (void*)registeredFile_.c_str(), registeredProject_, this, (void*)&fileCallback };
-    register_("file_in_project_ex2", p);
+    for (size_t i = 0; i < files.size(); ++i) {
+        registered_.push_back(std::unique_ptr<Registered>(new Registered { this, files[i], i == 0 }));
+        Registered* r = registered_.back().get();
+        void* p[4] = { (void*)r->file.path.c_str(), proj, r, (void*)&fileCallback };
+        register_("file_in_project_ex2", p);
+    }
 }
 
 std::string relativePath(const std::string& path, const std::string& baseDir)

@@ -194,6 +194,7 @@ static void setAx(NSControl* c, NSString* label, NSString* help)
 
     NSTextField* _instrumentField;
     NSTextField* _pathField;
+    NSTextField* _locationField;
     NSTextField* _statusField;
     NSTextField* _voicesField;
     NSPopUpButton* _recentButton;
@@ -328,6 +329,11 @@ static NSTextField* makeWrappingText(NSString* label)
     _pathField.textColor = [NSColor secondaryLabelColor];
     _pathField.font = [NSFont systemFontOfSize:[NSFont smallSystemFontSize]];
     [root addArrangedSubview:_pathField];
+
+    _locationField = makeWrappingText(@"Project location");
+    _locationField.textColor = [NSColor secondaryLabelColor];
+    _locationField.font = [NSFont systemFontOfSize:[NSFont smallSystemFontSize]];
+    [root addArrangedSubview:_locationField];
 
     _statusField = makeWrappingText(@"Status");
     [root addArrangedSubview:_statusField];
@@ -630,6 +636,7 @@ static NSTextField* makeWrappingText(NSString* label)
     _instrumentField.stringValue = loaded ? ns(info.title + " (" + kindName(info.kind) + ")") : @"No instrument loaded";
     _pathField.stringValue = path.empty() ? @"" : ns(path);
     _pathField.hidden = path.empty();
+    [self updateLocation];
     [self updateStatus];
 
     _reloadButton.enabled = !path.empty();
@@ -681,6 +688,14 @@ static NSTextField* makeWrappingText(NSString* label)
     }
 }
 
+- (void)updateLocation
+{
+    NSString* text = ns(_plugin->projectLocationText());
+    if (![text isEqualToString:_locationField.stringValue])
+        _locationField.stringValue = text;
+    _locationField.hidden = text.length == 0;
+}
+
 - (void)updateStatus
 {
     NSString* status = ns(_plugin->statusMessage());
@@ -715,6 +730,8 @@ static NSTextField* makeWrappingText(NSString* label)
 
     if (++_tick % 3 == 0)
         _voicesField.stringValue = [NSString stringWithFormat:@"Active voices: %d", _plugin->activeVoices()];
+    if (_tick % 10 == 0)
+        [self updateLocation]; // changes when the project is saved or moved
 }
 
 #pragma mark - Actions

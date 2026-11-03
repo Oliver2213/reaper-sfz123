@@ -74,6 +74,7 @@ add_library(SFPlayer MODULE
     src/engine_sfz.cpp
     src/state.cpp
     src/reaper.cpp
+    src/sfz_files.cpp
     src/gui_mac.mm
 )
 add_dependencies(SFPlayer sf2engine_build)

@@ -12,6 +12,8 @@
 #include <cstdio>
 #include <cstring>
 #include <dlfcn.h>
+#include <filesystem>
+#include <map>
 #include <string>
 #include <thread>
 #include <vector>
@@ -56,11 +58,35 @@ static void fakeResolve(const char* in, char* out, int size, const char*)
     if (f)
         std::fclose(f);
 }
+// file_in_project_ex2 registrations: userdata -> {path, callback}
+using FileCallback = intptr_t (*)(void*, int, void*);
+static std::map<void*, std::pair<std::string, FileCallback>> gRegistered;
 static int fakeRegister(const char* name, void* info)
 {
     void** p = (void**)info;
-    std::printf("  [reaper] %s %s\n", name, (const char*)p[0]);
+    if (!std::strcmp(name, "file_in_project_ex2"))
+        gRegistered[p[2]] = { (const char*)p[0], (FileCallback)p[3] };
+    else if (!std::strcmp(name, "-file_in_project_ex2"))
+        gRegistered.erase(p[2]);
     return 1;
+}
+
+// What REAPER's "Save as, copy all media into project directory" does for plug-in files.
+static void fakeSaveAsWithCopy(const std::string& newProjectDir)
+{
+    namespace fs = std::filesystem;
+    std::string main;
+    for (auto& [ud, reg] : gRegistered) {
+        const char* sub = (const char*)reg.second(ud, 0x100, nullptr);
+        fs::path dest = fs::path(newProjectDir) / (sub ? sub : "") / fs::path(reg.first).filename();
+        fs::create_directories(dest.parent_path());
+        fs::copy_file(reg.first, dest, fs::copy_options::overwrite_existing);
+        if (main.empty())
+            main = dest.string();
+        reg.second(ud, 0, (void*)dest.c_str());
+    }
+    std::printf("  [reaper] copied %zu files into %s\n", gRegistered.size(), newProjectDir.c_str());
+    setenv("SFP_FAKE_PROJECT", (newProjectDir + "/song.rpp").c_str(), 1);
 }
 static void* fakeGetFunc(const char* name)
 {
@@ -318,6 +344,25 @@ int main(int argc, char** argv)
             noteNames->get(p, i, &nn);
             std::printf("  key %d: %s\n", nn.key, nn.name);
         }
+    }
+
+    if (const char* copyTo = getenv("SFP_FAKE_COPY_TO")) {
+        std::printf("  %zu files registered with REAPER\n", gRegistered.size());
+        fakeSaveAsWithCopy(copyTo);
+        Stream mid;
+        clap_ostream mos { &mid, sWrite };
+        state->save(p, &mos);
+        std::printf("  state written by save-as: %s\n", mid.data.substr(11, mid.data.find('\n', 11) - 11).c_str());
+        // let the plug-in reload from the copies, as it does after REAPER's save finishes
+        for (int i = 0; i < 400; ++i) {
+            Events none;
+            run(none, 1, false);
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        size_t inCopy = 0;
+        for (auto& [ud, reg] : gRegistered)
+            inCopy += reg.first.rfind(copyTo, 0) == 0;
+        std::printf("  after reload: %zu of %zu registered files are the copies\n", inCopy, gRegistered.size());
     }
 
     // play a chord with the sustain pedal, then release

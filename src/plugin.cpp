@@ -1,5 +1,7 @@
 #include "plugin.h"
 
+#include "sfz_files.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -964,7 +966,7 @@ void Plugin::unloadFile()
     loadGeneration_.fetch_add(1); // discard any load in flight
     requestedPath_.clear();
     unresolvedPath_.clear();
-    reaper_.setProjectFile({});
+    reaper_.setProjectFiles({});
     loadedPolyphony_ = -1;
     publishEngine(new EmptyEngine());
     info_ = InstrumentInfo {};
@@ -1045,7 +1047,14 @@ void Plugin::loaderMain()
 std::string Plugin::locateInstrument(const std::string& saved, const std::string& projectDir) const
 {
     std::string path = joinPath(projectDir, saved); // absolute paths pass through unchanged
-    return fileExists(path) ? path : reaper_.resolveFile(path);
+    if (fileExists(path))
+        return path;
+    // copies made by REAPER live in SoundFonts/ or SFZ/<instrument>/; let REAPER search there too
+    std::string hint = kindForPath(path) == InstrumentKind::Sfz ? "SFZ" : "SoundFonts";
+    auto slash = saved.find_last_of('/');
+    if (slash != std::string::npos && saved[0] != '/' && saved.rfind("..", 0) != 0)
+        hint = saved.substr(0, slash);
+    return reaper_.resolveFile(path, hint);
 }
 
 void Plugin::resolvePendingPath()
@@ -1062,12 +1071,45 @@ void Plugin::resolvePendingPath()
 
 void Plugin::instrumentRenamed(const char* path)
 {
-    // REAPER copied or moved the file (e.g. "copy media to project folder"); same content, new place
+    // REAPER copied or moved the instrument during "save as" before writing the project, so the
+    // project stores the new path. Reload once the save is done: an SFZ's samples stream from disk,
+    // and "move" removes the originals.
     requestedPath_ = path;
     info_.path = path;
-    if (hostState_)
-        hostState_->mark_dirty(host_);
+    reloadAfterCopy_ = true;
+    host_->request_callback(host_);
     bumpRevision();
+}
+
+void Plugin::registerProjectFiles()
+{
+    std::vector<ReaperApi::ProjectFile> files;
+    if (info_.kind == InstrumentKind::Sfz) {
+        // keep the instrument's folder layout so its samples and includes are found from the copy
+        std::string root = commonDirectory(info_.files);
+        std::string name = fileName(root);
+        for (const auto& f : info_.files) {
+            std::string dir = f.substr(0, f.find_last_of('/'));
+            std::string sub = "SFZ/" + name + (dir.size() > root.size() ? dir.substr(root.size()) : "");
+            files.push_back({ f, sub });
+        }
+    } else if (!info_.path.empty()) {
+        files.push_back({ info_.path, "SoundFonts" });
+    }
+    reaper_.setProjectFiles(files);
+}
+
+std::string Plugin::projectLocationText() const
+{
+    if (!reaper_.available() || requestedPath_.empty() || info_.kind == InstrumentKind::None)
+        return {};
+    const char* how = "use Save Project As with \u201cCopy all media into project directory\u201d";
+    std::string dir = reaper_.projectDirectory();
+    if (dir.empty())
+        return std::string("The project hasn't been saved yet. To keep this instrument with the project, ") + how + ".";
+    if (requestedPath_.compare(0, dir.size() + 1, dir + "/") == 0)
+        return "Stored in the project folder: " + requestedPath_.substr(dir.size() + 1);
+    return std::string("Stored outside the project folder. To copy it into the project, ") + how + ".";
 }
 
 void Plugin::onTimer(clap_id id)
@@ -1145,7 +1187,7 @@ void Plugin::finishLoad(std::unique_ptr<LoadJob> job)
     publishEngine(engine);
 
     // SFZ instruments are a folder of samples; REAPER would copy only the .sfz, so register single files only
-    reaper_.setProjectFile(info_.kind == InstrumentKind::Sfz ? std::string() : info_.path);
+    registerProjectFiles();
 
     if (hostParams_)
         hostParams_->rescan(host_, CLAP_PARAM_RESCAN_VALUES | CLAP_PARAM_RESCAN_TEXT | CLAP_PARAM_RESCAN_INFO);
@@ -1173,6 +1215,11 @@ void Plugin::onMainThread()
     }
     if (job)
         finishLoad(std::move(job));
+
+    if (reloadAfterCopy_) {
+        reloadAfterCopy_ = false;
+        startLoad(requestedPath_, false);
+    }
 
     if (polyphonyReload_.exchange(false)) {
         // sfizz cannot change its voice count while running, so rebuild it

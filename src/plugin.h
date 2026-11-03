@@ -116,6 +116,7 @@ public:
     const std::string& requestedPath() const { return requestedPath_; }
     uint64_t revision() const { return revision_.load(); }
     int activeVoices() const { return activeVoices_.load(); }
+    std::string projectLocationText() const; // where the instrument lives relative to the project
 
     void loadFile(const std::string& path); // from the user: resets preset and controls
     void reloadFile();
@@ -145,6 +146,8 @@ private:
     std::string locateInstrument(const std::string& saved, const std::string& projectDir) const;
     void resolvePendingPath();
     void instrumentRenamed(const char* path);
+    void registerProjectFiles();
+    bool reloadAfterCopy_ = false;
     void loaderMain();
     void finishLoad(std::unique_ptr<LoadJob> job);
     void publishEngine(Engine* e);

@@ -1,6 +1,8 @@
 // SFZ engine: wraps sfizz.
 #include "engine.h"
 
+#include "sfz_files.h"
+
 #include <sfizz.hpp>
 
 #include <algorithm>
@@ -196,6 +198,10 @@ std::unique_ptr<Engine> loadSfzEngine(const LoadRequest& req, std::atomic<int>& 
     InstrumentInfo& info = engine->mutableInfo();
     info.kind = InstrumentKind::Sfz;
     info.path = req.path;
+    info.files = { req.path };
+    for (auto& f : collectSfzFiles(req.path))
+        if (f != req.path)
+            info.files.push_back(f);
 
     // title: file name without extension
     std::string file = req.path.substr(req.path.find_last_of('/') + 1);

@@ -35,6 +35,7 @@ struct KeyName {
 struct InstrumentInfo {
     InstrumentKind kind = InstrumentKind::None;
     std::string path;
+    std::vector<std::string> files; // every file the instrument uses, `path` first
     std::string title;           // instrument name for display
     std::vector<PresetInfo> presets;
     std::vector<ControlInfo> controls;

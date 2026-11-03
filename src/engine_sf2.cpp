@@ -101,6 +101,7 @@ std::unique_ptr<Engine> loadSf2Engine(const LoadRequest& req, std::atomic<int>& 
 
     InstrumentInfo& info = engine->mutableInfo();
     info.path = req.path;
+    info.files = { req.path };
     info.kind = kindForPath(req.path);
 
     char name[256] = { 0 };
