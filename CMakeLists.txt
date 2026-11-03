@@ -75,7 +75,6 @@ add_library(SFPlayer MODULE
     src/state.cpp
     src/reaper.cpp
     src/sfz_files.cpp
-    src/presets.cpp
     src/prefs_mac.mm
     src/gui_mac.mm
 )

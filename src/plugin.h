@@ -13,7 +13,6 @@
 #include <map>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -95,9 +94,6 @@ public:
     uint32_t noteNameCount() const;
     bool noteNameGet(uint32_t index, clap_note_name* name) const;
 
-    // clap.preset-load
-    bool presetLoad(uint32_t kind, const char* location, const char* key);
-
     // clap.timer-support
     void onTimer(clap_id id);
 
@@ -139,21 +135,15 @@ public:
     const clap_host* host() const { return host_; }
 
 private:
-    // a load requested through clap.preset-load, reported back to the host when done
-    struct PresetOrigin {
-        uint32_t kind;
-        std::string location, key;
-    };
     struct LoadJob {
         uint64_t generation = 0;
         LoadRequest request;
         bool applyDefaults = false;
-        std::optional<PresetOrigin> preset;
         std::unique_ptr<Engine> engine;
         std::string error;
     };
 
-    void startLoad(const std::string& path, bool applyDefaults, std::optional<PresetOrigin> preset = {});
+    void startLoad(const std::string& path, bool applyDefaults);
     // saved path -> file on disk: relative to the project folder, else REAPER's media search
     std::string locateInstrument(const std::string& saved, const std::string& projectDir) const;
     void resolvePendingPath();
@@ -190,7 +180,6 @@ private:
     const clap_host_log* hostLog_ = nullptr;
     const clap_host_note_name* hostNoteName_ = nullptr;
     const clap_host_timer_support* hostTimer_ = nullptr;
-    const clap_host_preset_load* hostPresetLoad_ = nullptr;
     ReaperApi reaper_;
     clap_plugin plugin_;
 

@@ -1,6 +1,5 @@
 // CLAP entry point and plugin factory.
 #include "plugin.h"
-#include "presets.h"
 
 #include <cstring>
 
@@ -28,11 +27,7 @@ void entryDeinit() {}
 
 const void* entryGetFactory(const char* id)
 {
-    if (!std::strcmp(id, CLAP_PLUGIN_FACTORY_ID))
-        return &kFactory;
-    if (!std::strcmp(id, CLAP_PRESET_DISCOVERY_FACTORY_ID) || !std::strcmp(id, CLAP_PRESET_DISCOVERY_FACTORY_ID_COMPAT))
-        return &sfp::kPresetDiscoveryFactory;
-    return nullptr;
+    return std::strcmp(id, CLAP_PLUGIN_FACTORY_ID) == 0 ? &kFactory : nullptr;
 }
 
 } // namespace
