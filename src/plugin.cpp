@@ -306,9 +306,6 @@ bool Plugin::init()
     hostPresetLoad_ = static_cast<const clap_host_preset_load*>(host_->get_extension(host_, CLAP_EXT_PRESET_LOAD));
     if (!hostPresetLoad_)
         hostPresetLoad_ = static_cast<const clap_host_preset_load*>(host_->get_extension(host_, CLAP_EXT_PRESET_LOAD_COMPAT));
-    hostContextMenu_ = static_cast<const clap_host_context_menu*>(host_->get_extension(host_, CLAP_EXT_CONTEXT_MENU));
-    if (!hostContextMenu_)
-        hostContextMenu_ = static_cast<const clap_host_context_menu*>(host_->get_extension(host_, CLAP_EXT_CONTEXT_MENU_COMPAT));
     reaper_.init(host_, [](void* self, const char* path) { static_cast<Plugin*>(self)->instrumentRenamed(path); }, this);
     loader_ = std::thread([this] { loaderMain(); });
     // presets change from automation and program changes too, so check the FX name regularly
@@ -579,64 +576,6 @@ void Plugin::uiEndGesture(clap_id id)
     uiEvents_.push({ UiParamEvent::End, id, 0 });
     if (hostParams_)
         hostParams_->request_flush(host_);
-}
-
-std::vector<HostMenuItem> Plugin::hostParamMenu(clap_id id) const
-{
-    std::vector<HostMenuItem> items;
-    if (!hostContextMenu_)
-        return items;
-    auto add = [](const clap_context_menu_builder* b, clap_context_menu_item_kind_t kind, const void* data) {
-        auto& out = *static_cast<std::vector<HostMenuItem>*>(b->ctx);
-        HostMenuItem item;
-        switch (kind) {
-        case CLAP_CONTEXT_MENU_ITEM_ENTRY: {
-            auto* e = static_cast<const clap_context_menu_entry*>(data);
-            item = { HostMenuItem::Entry, e->label ? e->label : "", e->is_enabled, false, false, e->action_id };
-            break;
-        }
-        case CLAP_CONTEXT_MENU_ITEM_CHECK_ENTRY: {
-            auto* e = static_cast<const clap_context_menu_check_entry*>(data);
-            item = { HostMenuItem::Entry, e->label ? e->label : "", e->is_enabled, true, e->is_checked, e->action_id };
-            break;
-        }
-        case CLAP_CONTEXT_MENU_ITEM_SEPARATOR:
-            item.kind = HostMenuItem::Separator;
-            break;
-        case CLAP_CONTEXT_MENU_ITEM_BEGIN_SUBMENU: {
-            auto* e = static_cast<const clap_context_menu_submenu*>(data);
-            item = { HostMenuItem::BeginSubmenu, e->label ? e->label : "", e->is_enabled };
-            break;
-        }
-        case CLAP_CONTEXT_MENU_ITEM_END_SUBMENU:
-            item.kind = HostMenuItem::EndSubmenu;
-            break;
-        case CLAP_CONTEXT_MENU_ITEM_TITLE: {
-            auto* e = static_cast<const clap_context_menu_item_title*>(data);
-            item = { HostMenuItem::Title, e->title ? e->title : "", e->is_enabled };
-            break;
-        }
-        default:
-            return false;
-        }
-        out.push_back(std::move(item));
-        return true;
-    };
-    auto supports = [](const clap_context_menu_builder*, clap_context_menu_item_kind_t kind) {
-        return kind <= CLAP_CONTEXT_MENU_ITEM_TITLE;
-    };
-    const clap_context_menu_builder builder { &items, add, supports };
-    const clap_context_menu_target target { CLAP_CONTEXT_MENU_TARGET_KIND_PARAM, id };
-    if (!hostContextMenu_->populate(host_, &target, &builder))
-        items.clear();
-    return items;
-}
-
-void Plugin::performHostParamAction(clap_id id, clap_id action)
-{
-    const clap_context_menu_target target { CLAP_CONTEXT_MENU_TARGET_KIND_PARAM, id };
-    if (hostContextMenu_)
-        hostContextMenu_->perform(host_, &target, action);
 }
 
 void Plugin::emitParam(const clap_output_events* out, clap_id id, double value)

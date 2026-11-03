@@ -60,15 +60,6 @@ private:
     std::atomic<size_t> write_ { 0 }, read_ { 0 };
 };
 
-// An item of the host's context menu for a parameter (REAPER: envelope, learn, modulation...).
-struct HostMenuItem {
-    enum Kind { Entry, Separator, BeginSubmenu, EndSubmenu, Title } kind = Entry;
-    std::string label;
-    bool enabled = true;
-    bool checkable = false, checked = false;
-    clap_id action = CLAP_INVALID_ID;
-};
-
 enum class LoadState { Empty, Loading, Ready, Error };
 
 class Plugin {
@@ -144,8 +135,6 @@ public:
     void uiBeginGesture(clap_id id);
     void uiSetParam(clap_id id, double value);
     void uiEndGesture(clap_id id);
-    std::vector<HostMenuItem> hostParamMenu(clap_id id) const; // empty if the host has none
-    void performHostParamAction(clap_id id, clap_id action);
 
     const clap_host* host() const { return host_; }
 
@@ -202,7 +191,6 @@ private:
     const clap_host_note_name* hostNoteName_ = nullptr;
     const clap_host_timer_support* hostTimer_ = nullptr;
     const clap_host_preset_load* hostPresetLoad_ = nullptr;
-    const clap_host_context_menu* hostContextMenu_ = nullptr;
     ReaperApi reaper_;
     clap_plugin plugin_;
 
