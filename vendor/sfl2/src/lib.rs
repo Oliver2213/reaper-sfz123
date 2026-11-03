@@ -1558,7 +1558,9 @@ pub mod hi {
 
 					GeneralControlPalette::NoteOnKeyNumber => v.note_on_key_number as f64,
 
-					GeneralControlPalette::ChannelPressure | GeneralControlPalette::PolyPressure => 0.0,
+					GeneralControlPalette::ChannelPressure => v.host_data.channel_pressure() as f64 / 127.0,
+
+					GeneralControlPalette::PolyPressure => v.host_data.poly_pressure() as f64 / 127.0,
 
 					_ => 1.0,
 				}
@@ -1937,6 +1939,10 @@ pub mod hi {
 
 	pub trait HostData {
 		fn midi_cc_value(&self, _cc: u8) -> u8 { HOST_CC_NONE }
+
+		// channel / polyphonic aftertouch, 0-127
+		fn channel_pressure(&self) -> u8 { 0 }
+		fn poly_pressure(&self) -> u8 { 0 }
 	}
 
 	#[derive(Debug)]
@@ -2010,6 +2016,15 @@ pub mod hi {
 			Transform::Linear,
 		),
 
+		// 8.4.3 MIDI Channel Pressure to Vibrato LFO Pitch Depth
+		ModList::new(
+			0x000D,
+			Gen::VibLfoToPitch,
+			50,
+			0x0,
+			Transform::Linear,
+		),
+
 		// 8.4.4 MIDI Continuous Controller 1 (Modulation Wheel) to Vibrato LFO Pitch Depth
 		ModList::new(
 			0x0081,
@@ -2042,6 +2057,24 @@ pub mod hi {
 			0x058B,
 			Gen::InitialAttenuation,
 			960,
+			0x0,
+			Transform::Linear,
+		),
+
+		// 8.4.8 MIDI Continuous Controller 91 to Reverb Effects Send
+		ModList::new(
+			0x00DB,
+			Gen::ReverbEffectsSend,
+			200,
+			0x0,
+			Transform::Linear,
+		),
+
+		// 8.4.9 MIDI Continuous Controller 93 to Chorus Effects Send
+		ModList::new(
+			0x00DD,
+			Gen::ChorusEffectsSend,
+			200,
 			0x0,
 			Transform::Linear,
 		),
@@ -2310,7 +2343,8 @@ pub mod hi {
 			self.vol_env.delay_smpls = (delay as i64 - out.len() as i64).max(0) as usize;
 
 			if delay < out.len() {
-				let smpl_start = &self.sf.sample_data[smpl.start as usize..];
+				// bounds-checked access: malformed files must never read out of bounds
+				let smpl_start = self.sf.sample_data.get(smpl.start as usize..).unwrap_or(&[]);
 
 				let out = &mut out[delay..];
 				let env = &env[delay..];
@@ -2326,7 +2360,7 @@ pub mod hi {
 						&mut self.source_progress,
 						progress_ratio,
 						method,
-						|i| unsafe { *smpl_start.get_unchecked(i) } as f32 / 32767.0,
+						|i| smpl_start.get(i).copied().unwrap_or(0) as f32 / 32767.0,
 						out,
 						v.released,
 						&self.gen_values,
@@ -2334,13 +2368,13 @@ pub mod hi {
 					);
 				} else {
 					// fancy 24-bit resampling
-					let sm24_start = &self.sf.sample_data_24[smpl.start as usize..];
+					let sm24_start = self.sf.sample_data_24.get(smpl.start as usize..).unwrap_or(&[]);
 
 					smpl.resample(
 						&mut self.source_progress,
 						progress_ratio,
 						method,
-						|i| (((unsafe { *smpl_start.get_unchecked(i) } as i32) << 8) | unsafe { *sm24_start.get_unchecked(i) } as i32) as f32 / 8388607.0,
+						|i| (((smpl_start.get(i).copied().unwrap_or(0) as i32) << 8) | sm24_start.get(i).copied().unwrap_or(0) as i32) as f32 / 8388607.0,
 						out,
 						v.released,
 						&self.gen_values,
@@ -2588,7 +2622,10 @@ pub mod hi {
 
 				let mut i_global_zone = None;
 
-				let inst = &self.instruments[inst_gen.amount.w_amount() as usize];
+				// damaged files can reference instruments or samples that don't exist
+				let Some(inst) = self.instruments.get(inst_gen.amount.w_amount() as usize) else {
+					continue
+				};
 
 				for izone in &inst.zones {
 					let Some(sample_id_gen) = izone.get_sample_id_gen() else {
@@ -2604,6 +2641,10 @@ pub mod hi {
 					if !izone.is_active(keynum, vel) {
 						continue
 					}
+
+					let Some(sample) = self.sample_headers.get(sample_id_gen.amount.w_amount() as usize) else {
+						continue
+					};
 
 					let mut gen_values = GenValues::new();
 
@@ -2652,7 +2693,7 @@ pub mod hi {
 
 					let mut iv = InstVoice {
 						sf: self.clone(),
-						sample: self.sample_headers[sample_id_gen.amount.w_amount() as usize].clone(),
+						sample: sample.clone(),
 						p_global_zone: p_global_zone.clone(),
 						i_global_zone: i_global_zone.clone(),
 						p_zone: zone.clone(),

@@ -1,0 +1,21 @@
+[package]
+name = "sf2engine"
+version = "1.0.0"
+edition = "2024"
+authors = ["Blake Oliver"]
+license = "GPL-3.0-or-later"
+repository = "https://github.com/Oliver2213/reaper-sfz123"
+description = "SF2/SF3 synthesizer built on the SFLT sfl2 core, exposed through a C ABI"
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+sfl2 = { path = "../vendor/sfl2" }
+
+[profile.release]
+opt-level = 3
+debug = false
+panic = "unwind"
+lto = "thin"
+codegen-units = 1

@@ -1,0 +1,5 @@
+/build/
+/compile_commands.json
+/engine-sf2/target/
+.DS_Store
+/.cache/
