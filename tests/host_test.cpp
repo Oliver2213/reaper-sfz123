@@ -211,6 +211,7 @@ static void writeWav(const char* path, const std::vector<float>& l, const std::v
 
 int main(int argc, char** argv)
 {
+    setenv("SFP_NO_RECENTS", "1", 1); // keep test loads out of the user's recent instruments
     if (argc < 3) {
         std::fprintf(stderr, "usage: %s <plugin.clap> <instrument> [out.wav]\n", argv[0]);
         return 2;

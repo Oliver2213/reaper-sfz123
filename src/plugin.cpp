@@ -1,5 +1,6 @@
 #include "plugin.h"
 
+#include "recent.h"
 #include "sfz_files.h"
 
 #include <algorithm>
@@ -117,6 +118,12 @@ bool cStateSaveContext(const clap_plugin* p, const clap_ostream* s, uint32_t con
 }
 bool cStateLoadContext(const clap_plugin* p, const clap_istream* s, uint32_t) { return Plugin::from(p)->stateLoad(s); }
 const clap_plugin_state_context kStateContextExt = { cStateSaveContext, cStateLoadContext };
+
+bool cPresetLoad(const clap_plugin* p, uint32_t kind, const char* location, const char* key)
+{
+    return Plugin::from(p)->presetLoad(kind, location, key);
+}
+const clap_plugin_preset_load kPresetLoadExt = { cPresetLoad };
 
 void cOnTimer(const clap_plugin* p, clap_id id) { Plugin::from(p)->onTimer(id); }
 const clap_plugin_timer_support kTimerExt = { cOnTimer };
@@ -294,6 +301,9 @@ bool Plugin::init()
     hostLog_ = static_cast<const clap_host_log*>(host_->get_extension(host_, CLAP_EXT_LOG));
     hostNoteName_ = static_cast<const clap_host_note_name*>(host_->get_extension(host_, CLAP_EXT_NOTE_NAME));
     hostTimer_ = static_cast<const clap_host_timer_support*>(host_->get_extension(host_, CLAP_EXT_TIMER_SUPPORT));
+    hostPresetLoad_ = static_cast<const clap_host_preset_load*>(host_->get_extension(host_, CLAP_EXT_PRESET_LOAD));
+    if (!hostPresetLoad_)
+        hostPresetLoad_ = static_cast<const clap_host_preset_load*>(host_->get_extension(host_, CLAP_EXT_PRESET_LOAD_COMPAT));
     reaper_.init(host_, [](void* self, const char* path) { static_cast<Plugin*>(self)->instrumentRenamed(path); }, this);
     loader_ = std::thread([this] { loaderMain(); });
     return true;
@@ -347,6 +357,8 @@ const void* Plugin::extension(const char* id)
         return &kStateContextExt;
     if (!std::strcmp(id, CLAP_EXT_TIMER_SUPPORT))
         return &kTimerExt;
+    if (!std::strcmp(id, CLAP_EXT_PRESET_LOAD) || !std::strcmp(id, CLAP_EXT_PRESET_LOAD_COMPAT))
+        return &kPresetLoadExt;
     if (!std::strcmp(id, CLAP_EXT_AUDIO_PORTS))
         return &kAudioPortsExt;
     if (!std::strcmp(id, CLAP_EXT_NOTE_PORTS))
@@ -979,7 +991,7 @@ void Plugin::unloadFile()
     setStatus(LoadState::Empty, "No instrument loaded. Choose Open to load an SF2, SF3 or SFZ file.");
 }
 
-void Plugin::startLoad(const std::string& path, bool applyDefaults)
+void Plugin::startLoad(const std::string& path, bool applyDefaults, std::optional<PresetOrigin> preset)
 {
     auto job = std::make_unique<LoadJob>();
     job->generation = loadGeneration_.fetch_add(1) + 1;
@@ -988,6 +1000,7 @@ void Plugin::startLoad(const std::string& path, bool applyDefaults)
     job->request.maxFrames = maxFrames_;
     job->request.polyphony = (int)param(kPolyphony);
     job->applyDefaults = applyDefaults;
+    job->preset = std::move(preset);
 
     requestedPath_ = path;
     loadProgress_.store(0);
@@ -1154,6 +1167,8 @@ void Plugin::finishLoad(std::unique_ptr<LoadJob> job)
             msg += " " + info_.title + " is still loaded.";
         logMessage(CLAP_LOG_ERROR, msg);
         setStatus(LoadState::Error, msg);
+        if (hostPresetLoad_ && job->preset)
+            hostPresetLoad_->on_error(host_, job->preset->kind, job->preset->location.c_str(), job->preset->key.c_str(), 0, msg.c_str());
         return;
     }
 
@@ -1202,6 +1217,9 @@ void Plugin::finishLoad(std::unique_ptr<LoadJob> job)
         logMessage(CLAP_LOG_WARNING, info_.title + ": " + w);
     }
     setStatus(LoadState::Ready, msg);
+    addRecentInstrument(job->request.path);
+    if (hostPresetLoad_ && job->preset)
+        hostPresetLoad_->loaded(host_, job->preset->kind, job->preset->location.c_str(), job->preset->key.c_str());
 }
 
 void Plugin::onMainThread()
@@ -1227,6 +1245,17 @@ void Plugin::onMainThread()
         if (loadedPolyphony_ > 0 && poly != loadedPolyphony_ && !requestedPath_.empty())
             startLoad(requestedPath_, false);
     }
+}
+
+bool Plugin::presetLoad(uint32_t kind, const char* location, const char* key)
+{
+    // PLUGIN: one of our recent instruments, keyed by path. FILE: a file the host imports.
+    const char* path = kind == CLAP_PRESET_DISCOVERY_LOCATION_PLUGIN ? key : location;
+    if ((kind != CLAP_PRESET_DISCOVERY_LOCATION_PLUGIN && kind != CLAP_PRESET_DISCOVERY_LOCATION_FILE) || !path || !*path)
+        return false;
+    unresolvedPath_.clear();
+    startLoad(path, true, PresetOrigin { kind, location ? location : "", key ? key : "" });
+    return true;
 }
 
 void Plugin::applyPendingPreset()

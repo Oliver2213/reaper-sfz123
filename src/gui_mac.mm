@@ -4,6 +4,7 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 #include "plugin.h"
+#include "recent.h"
 
 #include <cmath>
 
@@ -12,7 +13,6 @@ using namespace sfp;
 static const CGFloat kWidth = 740;
 static const CGFloat kHeight = 660;
 static NSString* const kDefaultsSuite = @"com.oliver2213.sf-player";
-static const NSInteger kMaxRecent = 12;
 
 static NSString* ns(const std::string& s)
 {
@@ -188,7 +188,6 @@ static void setAx(NSControl* c, NSString* label, NSString* help)
     NSTimer* _timer;
     uint64_t _revision;
     NSString* _lastAnnounced;
-    NSString* _lastRecentPath;
     int _lastPercent;
     int _tick;
 
@@ -682,10 +681,7 @@ static NSTextField* makeWrappingText(NSString* label)
 
     [self refreshValues:YES];
 
-    if (_plugin->loadState() == LoadState::Ready && !path.empty() && ![_lastRecentPath isEqualToString:ns(path)]) {
-        _lastRecentPath = ns(path);
-        [self addRecent:_lastRecentPath];
-    }
+    [self rebuildRecentMenu];
 }
 
 - (void)updateLocation
@@ -869,44 +865,20 @@ static NSTextField* makeWrappingText(NSString* label)
 
 #pragma mark - Recent files
 
-- (NSArray<NSString*>*)recentFiles
-{
-    static dispatch_once_t migrated;
-    dispatch_once(&migrated, ^{
-        NSUserDefaults* defaults = [[NSUserDefaults alloc] initWithSuiteName:kDefaultsSuite];
-        NSUserDefaults* old = [[NSUserDefaults alloc] initWithSuiteName:@"com.sfplayer.sf-player"];
-        for (NSString* key in @[ @"recentFiles", @"lastDirectory", @"selectedTab" ])
-            if (![defaults objectForKey:key] && [old objectForKey:key])
-                [defaults setObject:[old objectForKey:key] forKey:key];
-    });
-    NSArray* a = [[[NSUserDefaults alloc] initWithSuiteName:kDefaultsSuite] arrayForKey:@"recentFiles"];
-    return [a isKindOfClass:[NSArray class]] ? a : @[];
-}
-
-- (void)addRecent:(NSString*)path
-{
-    NSMutableArray* a = [[self recentFiles] mutableCopy];
-    [a removeObject:path];
-    [a insertObject:path atIndex:0];
-    while ((NSInteger)a.count > kMaxRecent)
-        [a removeLastObject];
-    [[[NSUserDefaults alloc] initWithSuiteName:kDefaultsSuite] setObject:a forKey:@"recentFiles"];
-    [self rebuildRecentMenu];
-}
-
 - (void)rebuildRecentMenu
 {
     [_recentButton removeAllItems];
     [_recentButton addItemWithTitle:@"Recent"]; // title item of a pull-down
-    NSArray<NSString*>* recent = [self recentFiles];
-    for (NSString* p in recent) {
+    std::vector<std::string> recent = recentInstruments();
+    for (const auto& path : recent) {
+        NSString* p = ns(path);
         NSMenuItem* item = [[NSMenuItem alloc] initWithTitle:p.lastPathComponent action:@selector(openRecent:) keyEquivalent:@""];
         item.target = self;
         item.representedObject = p;
         item.toolTip = p;
         [_recentButton.menu addItem:item];
     }
-    if (recent.count == 0) {
+    if (recent.empty()) {
         NSMenuItem* none = [[NSMenuItem alloc] initWithTitle:@"No recent instruments" action:nil keyEquivalent:@""];
         none.enabled = NO;
         [_recentButton.menu addItem:none];
