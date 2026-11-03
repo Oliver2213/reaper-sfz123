@@ -50,6 +50,23 @@ static BOOL isInstrumentURL(NSURL* url)
 }
 @end
 
+#pragma mark - Host parameter menus
+
+// REAPER's parameter menu (envelope, learn, modulation...) for one parameter, rebuilt each time
+// it opens. Attached as the control's context menu: right-click, or VO-Shift-M in VoiceOver.
+@interface SFPHostMenu : NSMenu
+@property(nonatomic) clap_id paramId;
+@end
+@implementation SFPHostMenu
+@end
+
+static void showMenu(NSMenu* menu, NSView* view)
+{
+    [menu.delegate menuNeedsUpdate:menu];
+    if (menu.numberOfItems > 0)
+        [menu popUpMenuPositioningItem:nil atLocation:NSMakePoint(0, NSHeight(view.bounds)) inView:view];
+}
+
 #pragma mark - Slider
 
 enum GesturePhase { kBegin, kChange, kEnd, kSingle };
@@ -101,6 +118,14 @@ enum GesturePhase { kBegin, kChange, kEnd, kSingle };
     return YES;
 }
 
+- (BOOL)accessibilityPerformShowMenu
+{
+    if (!self.menu)
+        return [super accessibilityPerformShowMenu];
+    showMenu(self.menu, self);
+    return YES;
+}
+
 - (void)setToValue:(double)v
 {
     self.doubleValue = v;
@@ -149,6 +174,58 @@ enum GesturePhase { kBegin, kChange, kEnd, kSingle };
     return [s isKindOfClass:[SFPSlider class]] ? [s accessibilityPerformDecrement] : [super accessibilityPerformDecrement];
 }
 
+- (BOOL)accessibilityPerformShowMenu
+{
+    SFPSlider* s = (SFPSlider*)self.controlView;
+    return [s isKindOfClass:[SFPSlider class]] ? [s accessibilityPerformShowMenu] : [super accessibilityPerformShowMenu];
+}
+
+@end
+
+// A pop-up button's own menu holds its choices, so its context menu is kept separately.
+@interface SFPPopUpButton : NSPopUpButton
+@property(nonatomic, strong) NSMenu* contextMenu;
+@end
+
+// VoiceOver may send "show menu" to the cell
+@interface SFPPopUpButtonCell : NSPopUpButtonCell
+@end
+
+@implementation SFPPopUpButton
+
++ (Class)cellClass
+{
+    return [SFPPopUpButtonCell class];
+}
+
+- (NSMenu*)menuForEvent:(NSEvent*)e
+{
+    if (self.contextMenu) {
+        [self.contextMenu.delegate menuNeedsUpdate:self.contextMenu];
+        return self.contextMenu;
+    }
+    return [super menuForEvent:e];
+}
+
+- (BOOL)accessibilityPerformShowMenu
+{
+    if (!self.contextMenu)
+        return [super accessibilityPerformShowMenu];
+    showMenu(self.contextMenu, self);
+    return YES;
+}
+
+@end
+
+@implementation SFPPopUpButtonCell
+
+- (BOOL)accessibilityPerformShowMenu
+{
+    SFPPopUpButton* p = (SFPPopUpButton*)self.controlView;
+    return [p isKindOfClass:[SFPPopUpButton class]] && p.contextMenu ? [p accessibilityPerformShowMenu]
+                                                                     : [super accessibilityPerformShowMenu];
+}
+
 @end
 
 // Labels both the control and its cell (VoiceOver may talk to either).
@@ -178,7 +255,7 @@ static void setAx(NSControl* c, NSString* label, NSString* help)
 @implementation SFPParamRow
 @end
 
-@interface SFPRootView : NSView <NSTextFieldDelegate, NSTabViewDelegate>
+@interface SFPRootView : NSView <NSTextFieldDelegate, NSTabViewDelegate, NSMenuDelegate>
 - (instancetype)initWithPlugin:(Plugin*)plugin;
 - (void)shutdown;
 @end
@@ -341,10 +418,11 @@ static NSTextField* makeWrappingText(NSString* label)
     NSTextField* presetLabel = makeLabel(@"Preset:");
     presetLabel.accessibilityElement = NO; // the popup carries the label
     presetLabel.cell.accessibilityElement = NO;
-    _presetPopup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+    _presetPopup = [[SFPPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
     _presetPopup.target = self;
     _presetPopup.action = @selector(presetChosen:);
     setAx(_presetPopup, @"Preset", @"The SoundFont preset to play: bank and program numbers, the name, and the keys that make a sound. Presets that cannot make any sound are left out.");
+    [self attachHostMenuTo:_presetPopup param:kPreset];
     [_presetPopup.widthAnchor constraintGreaterThanOrEqualToConstant:360].active = YES;
     _prevPresetButton = [self button:@"Previous Preset" action:@selector(previousPreset:) help:@"Select the previous preset."];
     _nextPresetButton = [self button:@"Next Preset" action:@selector(nextPreset:) help:@"Select the next preset."];
@@ -396,7 +474,7 @@ static NSTextField* makeWrappingText(NSString* label)
         row.label.alignment = NSTextAlignmentRight;
 
         if (d.kind == Kind::Enum) {
-            NSPopUpButton* p = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+            NSPopUpButton* p = [[SFPPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
             for (const char* c : d.choices)
                 [p addItemWithTitle:ns(c)];
             p.target = self;
@@ -434,6 +512,7 @@ static NSTextField* makeWrappingText(NSString* label)
         }
 
         setAx(row.control, name, help);
+        [self attachHostMenuTo:row.control param:pid];
         row.label.accessibilityElement = NO; // the control carries the label
         row.label.cell.accessibilityElement = NO;
 
@@ -506,6 +585,67 @@ static NSTextField* makeWrappingText(NSString* label)
     item.label = title;
     item.view = content;
     [_tabs addTabViewItem:item];
+}
+
+- (void)attachHostMenuTo:(NSControl*)control param:(clap_id)pid
+{
+    if (!_plugin || _plugin->hostParamMenu(pid).empty())
+        return;
+    SFPHostMenu* menu = [[SFPHostMenu alloc] initWithTitle:control.accessibilityLabel ?: @""];
+    menu.paramId = pid;
+    menu.delegate = self;
+    menu.autoenablesItems = NO;
+    if ([control isKindOfClass:[SFPPopUpButton class]])
+        ((SFPPopUpButton*)control).contextMenu = menu;
+    else
+        control.menu = menu;
+}
+
+- (void)menuNeedsUpdate:(NSMenu*)menu
+{
+    if (![menu isKindOfClass:[SFPHostMenu class]] || !_plugin)
+        return;
+    clap_id pid = ((SFPHostMenu*)menu).paramId;
+    [menu removeAllItems];
+    NSMutableArray<NSMenu*>* open = [NSMutableArray arrayWithObject:menu];
+    for (const HostMenuItem& h : _plugin->hostParamMenu(pid)) {
+        NSMenu* m = open.lastObject;
+        if (h.kind == HostMenuItem::Separator) {
+            [m addItem:[NSMenuItem separatorItem]];
+            continue;
+        }
+        if (h.kind == HostMenuItem::EndSubmenu) {
+            if (open.count > 1)
+                [open removeLastObject];
+            continue;
+        }
+        NSMenuItem* item = [[NSMenuItem alloc] initWithTitle:ns(h.label) action:nil keyEquivalent:@""];
+        item.enabled = h.enabled;
+        if (h.kind == HostMenuItem::Title) {
+            // REAPER titles the menu "[Volume]"
+            item.title = [item.title stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"[]"]];
+            item.enabled = NO;
+        } else if (h.kind == HostMenuItem::BeginSubmenu) {
+            NSMenu* sub = [[NSMenu alloc] initWithTitle:item.title];
+            sub.autoenablesItems = NO;
+            item.submenu = sub;
+            [open addObject:sub];
+        } else {
+            item.action = @selector(hostMenuChosen:);
+            item.target = self;
+            item.tag = (NSInteger)pid;
+            item.representedObject = @(h.action);
+            if (h.checkable)
+                item.state = h.checked ? NSControlStateValueOn : NSControlStateValueOff;
+        }
+        [m addItem:item];
+    }
+}
+
+- (void)hostMenuChosen:(NSMenuItem*)item
+{
+    if (_plugin)
+        _plugin->performHostParamAction((clap_id)item.tag, (clap_id)[item.representedObject unsignedIntValue]);
 }
 
 - (void)tabView:(NSTabView*)tabView didSelectTabViewItem:(NSTabViewItem*)item
