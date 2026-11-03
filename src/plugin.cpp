@@ -1,6 +1,6 @@
 #include "plugin.h"
 
-#include "recent.h"
+#include "prefs.h"
 #include "sfz_files.h"
 
 #include <algorithm>
@@ -288,6 +288,8 @@ Plugin::~Plugin()
 
     if (hostTimer_ && resolveTimer_ != CLAP_INVALID_ID)
         hostTimer_->unregister_timer(host_, resolveTimer_);
+    if (hostTimer_ && nameTimer_ != CLAP_INVALID_ID)
+        hostTimer_->unregister_timer(host_, nameTimer_);
     guiDestroy();
     collectRetired();
     delete pending_.exchange(nullptr);
@@ -309,6 +311,9 @@ bool Plugin::init()
         hostContextMenu_ = static_cast<const clap_host_context_menu*>(host_->get_extension(host_, CLAP_EXT_CONTEXT_MENU_COMPAT));
     reaper_.init(host_, [](void* self, const char* path) { static_cast<Plugin*>(self)->instrumentRenamed(path); }, this);
     loader_ = std::thread([this] { loaderMain(); });
+    // presets change from automation and program changes too, so check the FX name regularly
+    if (reaper_.available() && hostTimer_)
+        hostTimer_->register_timer(host_, 500, &nameTimer_);
     return true;
 }
 
@@ -1186,8 +1191,43 @@ std::string Plugin::projectLocationText() const
     return std::string("Stored outside the project folder. To copy it into the project, ") + how + ".";
 }
 
+std::string Plugin::fxNameForInstrument() const
+{
+    if (info_.kind == InstrumentKind::None)
+        return {};
+    std::string name = info_.title;
+    auto preset = (size_t)param(kPreset);
+    bool singlePreset = info_.kind != InstrumentKind::Sfz && param(kMidiMode) == 0;
+    if (singlePreset && info_.presets.size() > 1 && preset < info_.presets.size())
+        name += ": " + info_.presets[preset].name;
+    return name + " (SF Player)";
+}
+
+void Plugin::updateFxName()
+{
+    std::string want = nameFxAfterInstrument() ? fxNameForInstrument() : "";
+    fxNameBasis_ = want;
+    std::string current;
+    if (!reaper_.fxRename(current))
+        return;
+    static const std::string kSuffix = " (SF Player)";
+    bool ours = current.empty() || current == fxName_
+        || (current.size() > kSuffix.size() && current.compare(current.size() - kSuffix.size(), kSuffix.size(), kSuffix) == 0);
+    if (!ours)
+        return; // renamed by the user
+    if (current != want)
+        reaper_.setFxRename(want);
+    fxName_ = want;
+}
+
 void Plugin::onTimer(clap_id id)
 {
+    if (id == nameTimer_) {
+        bool settled = loadState_ != LoadState::Loading && loadState_ != LoadState::Error && unresolvedPath_.empty();
+        if (settled && (nameFxAfterInstrument() ? fxNameForInstrument() : "") != fxNameBasis_)
+            updateFxName();
+        return;
+    }
     if (id != resolveTimer_)
         return;
     resolvePendingPath();

@@ -1,6 +1,7 @@
 #include "reaper.h"
 
 #include <cstdint>
+#include <cstring>
 #include <sys/stat.h>
 #include <vector>
 
@@ -19,9 +20,14 @@ struct ReaperPluginInfo {
 using EnumProjectsFn = void* (*)(int idx, char* fn, int fnSize);
 using GetContextFn = void* (*)(const clap_host* host, int sel);
 using ResolveFn = void (*)(const char* in, char* out, int outSize, const char* checkSubDir);
+using GetConfigFn = bool (*)(void* trackOrTake, int fx, const char* name, char* out, int outSize);
+using SetConfigFn = bool (*)(void* trackOrTake, int fx, const char* name, const char* value);
 
+constexpr int kContextTrack = 1;
+constexpr int kContextTake = 2;
 constexpr int kContextProject = 3;
 constexpr int kContextFxDsp = 4;
+constexpr int kContextFxIndex = 6;
 constexpr int kRenderingProject = 0x40000000;
 
 std::string parentDir(const std::string& path)
@@ -59,10 +65,55 @@ void ReaperApi::init(const clap_host* host, RenameCallback onRename, void* conte
     }
 }
 
-void* ReaperApi::project() const
+void* ReaperApi::context(int sel) const
 {
     auto getContext = getFunc_ ? reinterpret_cast<GetContextFn>(getFunc_("clap_get_reaper_context")) : nullptr;
-    return getContext ? getContext(host_, kContextProject) : nullptr;
+    return getContext ? getContext(host_, sel) : nullptr;
+}
+
+void* ReaperApi::project() const
+{
+    return context(kContextProject);
+}
+
+template <typename Fn> bool ReaperApi::withFx(const char* api, Fn fn) const
+{
+    void* owner = context(kContextTrack);
+    std::string prefix = "TrackFX_";
+    if (!owner) {
+        owner = context(kContextTake);
+        prefix = "TakeFX_";
+    }
+    if (!owner)
+        return false;
+    int fx = (int)(intptr_t)context(kContextFxIndex) - 1; // 1-based
+    auto get = reinterpret_cast<GetConfigFn>(getFunc_((prefix + "GetNamedConfigParm").c_str()));
+    void* f = getFunc_((prefix + api).c_str());
+    if (!get || !f)
+        return false;
+    // the index may not address us (FX containers have their own chains), so check it is an SF Player
+    char name[512] = { 0 };
+    if (!get(owner, fx, "fx_name", name, sizeof(name)) || !std::strstr(name, "SF Player"))
+        return false;
+    return fn(f, owner, fx);
+}
+
+bool ReaperApi::fxRename(std::string& name) const
+{
+    return withFx("GetNamedConfigParm", [&](void* f, void* owner, int fx) {
+        char buf[512] = { 0 };
+        if (!reinterpret_cast<GetConfigFn>(f)(owner, fx, "renamed_name", buf, sizeof(buf)))
+            return false;
+        name = buf;
+        return true;
+    });
+}
+
+bool ReaperApi::setFxRename(const std::string& name)
+{
+    return withFx("SetNamedConfigParm", [&](void* f, void* owner, int fx) {
+        return reinterpret_cast<SetConfigFn>(f)(owner, fx, "renamed_name", name.c_str());
+    });
 }
 
 std::string ReaperApi::projectDirectory() const

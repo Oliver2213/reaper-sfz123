@@ -4,7 +4,7 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 #include "plugin.h"
-#include "recent.h"
+#include "prefs.h"
 
 #include <cmath>
 
@@ -271,6 +271,7 @@ static void setAx(NSControl* c, NSString* label, NSString* help)
     NSTextField* _instrumentField;
     NSTextField* _pathField;
     NSTextField* _locationField;
+    NSButton* _nameFxCheckbox;
     NSTextField* _statusField;
     NSTextField* _voicesField;
     NSPopUpButton* _recentButton;
@@ -410,6 +411,12 @@ static NSTextField* makeWrappingText(NSString* label)
     _locationField.textColor = [NSColor secondaryLabelColor];
     _locationField.font = [NSFont systemFontOfSize:[NSFont smallSystemFontSize]];
     [root addArrangedSubview:_locationField];
+
+    _nameFxCheckbox = [NSButton checkboxWithTitle:@"Name the FX after the instrument" target:self action:@selector(nameFxToggled:)];
+    setAx(_nameFxCheckbox, nil, @"Shows the instrument, and the SoundFont preset, as this FX's name in REAPER's FX chain, mixer and track lists. A name you give the FX yourself is never replaced. Applies to every SF Player.");
+    _nameFxCheckbox.state = nameFxAfterInstrument() ? NSControlStateValueOn : NSControlStateValueOff;
+    _nameFxCheckbox.hidden = !_plugin->inReaper();
+    [root addArrangedSubview:_nameFxCheckbox];
 
     _statusField = makeWrappingText(@"Status");
     [root addArrangedSubview:_statusField];
@@ -866,8 +873,10 @@ static NSTextField* makeWrappingText(NSString* label)
 
     if (++_tick % 3 == 0)
         _voicesField.stringValue = [NSString stringWithFormat:@"Active voices: %d", _plugin->activeVoices()];
-    if (_tick % 10 == 0)
+    if (_tick % 10 == 0) {
         [self updateLocation]; // changes when the project is saved or moved
+        _nameFxCheckbox.state = nameFxAfterInstrument() ? NSControlStateValueOn : NSControlStateValueOff;
+    }
 }
 
 #pragma mark - Actions
@@ -911,6 +920,13 @@ static NSTextField* makeWrappingText(NSString* label)
         [panel beginSheetModalForWindow:self.window completionHandler:done];
     else
         done([panel runModal]);
+}
+
+- (void)nameFxToggled:(NSButton*)sender
+{
+    setNameFxAfterInstrument(sender.state == NSControlStateValueOn);
+    if (_plugin)
+        _plugin->updateFxName();
 }
 
 - (void)reload:(id)sender

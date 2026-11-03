@@ -36,6 +36,11 @@ public:
     // the rename callback reports its new path. An empty list clears the registration.
     void setProjectFiles(const std::vector<ProjectFile>& files);
 
+    // The name the user gave this FX in REAPER ("renamed_name"; empty when not renamed). Returns
+    // false when it can't be read, e.g. outside REAPER or in an FX container.
+    bool fxRename(std::string& name) const;
+    bool setFxRename(const std::string& name);
+
 private:
     struct Registered {
         ReaperApi* api;
@@ -44,6 +49,9 @@ private:
     };
     static intptr_t fileCallback(void* self, int msg, void* parm);
     void* project() const;
+    void* context(int sel) const;
+    // calls fn(TrackFX_/TakeFX_ named config function, track or take, fx index) for our FX
+    template <typename Fn> bool withFx(const char* api, Fn fn) const;
     void unregisterAll();
 
     const clap_host* host_ = nullptr;

@@ -1,7 +1,7 @@
 #include "presets.h"
 
 #include "plugin.h"
-#include "recent.h"
+#include "prefs.h"
 #include "reaper.h"
 
 #include <cstring>

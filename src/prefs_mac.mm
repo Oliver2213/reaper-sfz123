@@ -1,6 +1,6 @@
 #import <Foundation/Foundation.h>
 
-#include "recent.h"
+#include "prefs.h"
 
 #include <cstdlib>
 
@@ -45,6 +45,17 @@ void addRecentInstrument(const std::string& path)
     while (a.count > kMaxRecent)
         [a removeLastObject];
     [defaults() setObject:a forKey:@"recentFiles"];
+}
+
+bool nameFxAfterInstrument()
+{
+    id v = [defaults() objectForKey:@"nameFxAfterInstrument"];
+    return v ? [v boolValue] : true;
+}
+
+void setNameFxAfterInstrument(bool on)
+{
+    [defaults() setBool:on forKey:@"nameFxAfterInstrument"];
 }
 
 } // namespace sfp

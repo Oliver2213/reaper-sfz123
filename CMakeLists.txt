@@ -76,7 +76,7 @@ add_library(SFPlayer MODULE
     src/reaper.cpp
     src/sfz_files.cpp
     src/presets.cpp
-    src/recent_mac.mm
+    src/prefs_mac.mm
     src/gui_mac.mm
 )
 add_dependencies(SFPlayer sf2engine_build)
@@ -88,7 +88,7 @@ target_include_directories(SFPlayer PRIVATE
 )
 target_compile_definitions(SFPlayer PRIVATE SFPLAYER_VERSION="${PROJECT_VERSION}")
 target_compile_options(SFPlayer PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -fvisibility=hidden)
-set_source_files_properties(src/gui_mac.mm src/recent_mac.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+set_source_files_properties(src/gui_mac.mm src/prefs_mac.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 
 target_link_libraries(SFPlayer PRIVATE
     sfizz::sfizz

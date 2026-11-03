@@ -130,6 +130,8 @@ public:
     uint64_t revision() const { return revision_.load(); }
     int activeVoices() const { return activeVoices_.load(); }
     std::string projectLocationText() const; // where the instrument lives relative to the project
+    bool inReaper() const { return reaper_.available(); }
+    void updateFxName(); // names the FX in REAPER after the instrument, unless the user renamed it
 
     void loadFile(const std::string& path); // from the user: resets preset and controls
     void reloadFile();
@@ -240,6 +242,11 @@ private:
     int pendingPresetBankProgram_ = -1;
     std::string unresolvedPath_; // project-relative path waiting for the project folder
     clap_id resolveTimer_ = CLAP_INVALID_ID;
+    // FX name we gave the plug-in in REAPER, and what it was based on
+    std::string fxName_;
+    clap_id nameTimer_ = CLAP_INVALID_ID;
+    std::string fxNameBasis_;
+    std::string fxNameForInstrument() const;
     void applyPendingPreset();
     // instrument control values saved by CC number, preferred over slot order
     std::map<int, double> pendingControlValues_;
