@@ -74,6 +74,7 @@ sfizz is archived upstream, so SFZ opcodes it lacks are added in `patches/sfizz.
 - `pan_keytrack`, `pan_keycenter`
 - `fileg_depthccN`, `pitcheg_depthccN` (SFZ v1 spellings of `_depth_onccN`)
 - `lfoN_freq_lfoX`, `lfoN_depth_lfoX` and `egN_depth_lfoX`, with `_onccY` variants: one LFO or EG changing another LFO's rate (in Hz) or scaling its output (in %)
+- `offset_curveccN`, `delay_curveccN`: curves for the CCs that move the sample start and the delay
 
 Additions around the core that SFLT didn't have: sustain and sostenuto pedals, per-channel GM programs, RPNs, a working reverb and chorus, and a sustained note that is struck again releasing its previous voice.
 

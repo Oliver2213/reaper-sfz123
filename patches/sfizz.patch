@@ -163,10 +163,34 @@ index 27ea2e2..08dbfad 100644
  
  } // namespace sfz
 diff --git a/src/sfizz/Region.cpp b/src/sfizz/Region.cpp
-index be799ae..198e9c9 100644
+index be799ae..ee1bca4 100644
 --- a/src/sfizz/Region.cpp
 +++ b/src/sfizz/Region.cpp
-@@ -435,6 +435,12 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
+@@ -89,6 +89,11 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
+ 
+         delayCC[opcode.parameters.back()] = opcode.read(Default::delayMod);
+         break;
++    case hash("delay_curvecc&"):
++        if (opcode.parameters.back() >= config::numCCs)
++            return false;
++        delayCurveCC[opcode.parameters.back()] = opcode.read(Default::curveCC);
++        break;
+     case hash("delay_random"):
+         delayRandom = opcode.read(Default::delayRandom);
+         break;
+@@ -104,6 +109,11 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
+ 
+         offsetCC[opcode.parameters.back()] = opcode.read(Default::offsetMod);
+         break;
++    case hash("offset_curvecc&"):
++        if (opcode.parameters.back() >= config::numCCs)
++            return false;
++        offsetCurveCC[opcode.parameters.back()] = opcode.read(Default::curveCC);
++        break;
+     case hash("end"):
+         sampleEnd = opcode.read(Default::sampleEnd);
+         break;
+@@ -435,6 +445,12 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
      case_any_ccN("pan"):
          processGenericCc(opcode, Default::panMod, ModKey::createNXYZ(ModId::Pan, id));
          break;
@@ -179,7 +203,7 @@ index be799ae..198e9c9 100644
      case hash("position"):
          position = opcode.read(Default::position);
          break;
-@@ -1243,23 +1249,44 @@ bool sfz::Region::parseEGOpcode(const Opcode& opcode, absl::optional<EGDescripti
+@@ -1243,23 +1259,44 @@ bool sfz::Region::parseEGOpcode(const Opcode& opcode, absl::optional<EGDescripti
      return parsed;
  }
  
@@ -232,7 +256,7 @@ index be799ae..198e9c9 100644
      //
      auto getOrCreateLFOStep = [&opcode, &lfo]() -> float* {
          const unsigned stepNumber1Based = opcode.parameters[1];
-@@ -1311,6 +1338,28 @@ bool sfz::Region::parseLFOOpcodeV2(const Opcode& opcode)
+@@ -1311,6 +1348,28 @@ bool sfz::Region::parseLFOOpcodeV2(const Opcode& opcode)
      case hash("lfo&_freq"):
          lfo.freq = opcode.read(Default::lfoFreq);
          break;
@@ -261,7 +285,7 @@ index be799ae..198e9c9 100644
      case_any_ccN("lfo&_freq"):
          processGenericCc(opcode, Default::lfoFreqMod, ModKey::createNXYZ(ModId::LFOFrequency, id, lfoNumber));
          break;
-@@ -1704,6 +1753,19 @@ bool sfz::Region::parseEGOpcodeV2(const Opcode& opcode)
+@@ -1704,6 +1763,19 @@ bool sfz::Region::parseEGOpcodeV2(const Opcode& opcode)
          EG_target_cc(ModKey::createNXYZ(ModId::LFOFrequency, id, opcode.parameters[1] - 1), Default::lfoFreqMod);
          break;
  
@@ -282,10 +306,22 @@ index be799ae..198e9c9 100644
      default:
          return false;
 diff --git a/src/sfizz/Region.h b/src/sfizz/Region.h
-index b882c44..694a385 100644
+index b882c44..5f4fa3f 100644
 --- a/src/sfizz/Region.h
 +++ b/src/sfizz/Region.h
-@@ -320,6 +320,8 @@ struct Region {
+@@ -238,9 +238,11 @@ struct Region {
+     float delay { Default::delay }; // delay
+     float delayRandom { Default::delayRandom }; // delay_random
+     CCMap<float> delayCC { Default::delayMod };
++    CCMap<uint8_t> delayCurveCC { Default::curveCC }; // delay_curveccN
+     int64_t offset { Default::offset }; // offset
+     int64_t offsetRandom { Default::offsetRandom }; // offset_random
+     CCMap<int64_t> offsetCC { Default::offsetMod };
++    CCMap<uint8_t> offsetCurveCC { Default::curveCC }; // offset_curveccN
+     int64_t sampleEnd { Default::sampleEnd }; // end
+     CCMap<int64_t> endCC { Default::sampleEndMod };
+     absl::optional<uint32_t> sampleCount {}; // count
+@@ -320,6 +322,8 @@ struct Region {
      float position { Default::position }; // position
      uint8_t ampKeycenter { Default::key }; // amp_keycenter
      float ampKeytrack { Default::ampKeytrack }; // amp_keytrack
@@ -294,10 +330,88 @@ index b882c44..694a385 100644
      float ampVeltrack { Default::ampVeltrack }; // amp_veltrack
      CCMap<ModifierCurvePair<float>> ampVeltrackCC { ModifierCurvePair<float>{ Default::ampVeltrackMod, Default::curveCC } };
      std::vector<std::pair<uint8_t, float>> velocityPoints; // amp_velcurve_N
+diff --git a/src/sfizz/RegionStateful.cpp b/src/sfizz/RegionStateful.cpp
+index 1a4e440..c8f450f 100644
+--- a/src/sfizz/RegionStateful.cpp
++++ b/src/sfizz/RegionStateful.cpp
+@@ -22,22 +22,29 @@ float baseVolumedB(const Region& region, const MidiState& midiState, int noteNum
+ }
+ 
+ 
+-uint64_t sampleOffset(const Region& region, const MidiState& midiState) noexcept
++// a CC's value through the curve set for it with *_curveccN, if any
++static float curvedCC(const CCMap<uint8_t>& curveCC, int cc, const MidiState& midiState, const CurveSet& curves) noexcept
++{
++    const float value = midiState.getCCValue(cc);
++    return curveCC.contains(cc) ? curves.getCurve(curveCC.getWithDefault(cc)).evalNormalized(value) : value;
++}
++
++uint64_t sampleOffset(const Region& region, const MidiState& midiState, const CurveSet& curves) noexcept
+ {
+     std::uniform_int_distribution<int64_t> offsetDistribution { 0, region.offsetRandom };
+     int64_t finalOffset = region.offset + offsetDistribution(Random::randomGenerator);
+     for (const auto& mod: region.offsetCC)
+-        finalOffset += static_cast<int64_t>(mod.data * midiState.getCCValue(mod.cc));
++        finalOffset += static_cast<int64_t>(mod.data * curvedCC(region.offsetCurveCC, mod.cc, midiState, curves));
+     return Default::offset.bounds.clamp(finalOffset);
+ }
+ 
+-float regionDelay(const Region& region, const MidiState& midiState) noexcept
++float regionDelay(const Region& region, const MidiState& midiState, const CurveSet& curves) noexcept
+ {
+     fast_real_distribution<float> delayDistribution { 0, region.delayRandom };
+     float finalDelay { region.delay };
+     finalDelay += delayDistribution(Random::randomGenerator);
+     for (const auto& mod: region.delayCC)
+-        finalDelay += mod.data * midiState.getCCValue(mod.cc);
++        finalDelay += mod.data * curvedCC(region.delayCurveCC, mod.cc, midiState, curves);
+ 
+     return Default::delay.bounds.clamp(finalDelay);
+ }
+diff --git a/src/sfizz/RegionStateful.h b/src/sfizz/RegionStateful.h
+index 8303126..aa57bc0 100644
+--- a/src/sfizz/RegionStateful.h
++++ b/src/sfizz/RegionStateful.h
+@@ -50,7 +50,7 @@ float baseVolumedB(const Region& region, const MidiState& midiState, int noteNum
+  * @param midiState
+  * @return uint32_t
+  */
+-uint64_t sampleOffset(const Region& region, const MidiState& midiState) noexcept;
++uint64_t sampleOffset(const Region& region, const MidiState& midiState, const CurveSet& curves) noexcept;
+ /**
+  * @brief Get the region delay in seconds
+  *
+@@ -58,7 +58,7 @@ uint64_t sampleOffset(const Region& region, const MidiState& midiState) noexcept
+  * @param midiState
+  * @return float
+  */
+-float regionDelay(const Region& region, const MidiState& midiState) noexcept;
++float regionDelay(const Region& region, const MidiState& midiState, const CurveSet& curves) noexcept;
+ /**
+  * @brief Get the index of the sample end, either natural end or forced
+  * loop.
 diff --git a/src/sfizz/Voice.cpp b/src/sfizz/Voice.cpp
-index e5233aa..7c6d81e 100644
+index e5233aa..1028633 100644
 --- a/src/sfizz/Voice.cpp
 +++ b/src/sfizz/Voice.cpp
+@@ -435,7 +435,7 @@ bool Voice::startVoice(Layer* layer, int delay, const TriggerEvent& event) noexc
+         delay = 0;
+ 
+     impl.triggerDelay_ = delay;
+-    impl.initialDelay_ = delay + static_cast<int>(regionDelay(region, midiState) * impl.sampleRate_);
++    impl.initialDelay_ = delay + static_cast<int>(regionDelay(region, midiState, curveSet) * impl.sampleRate_);
+     impl.startTimestamp_ = midiState.getInternalClock() + impl.initialDelay_; // need to set this before switchState
+ 
+     impl.switchState(State::playing);
+@@ -485,7 +485,7 @@ bool Voice::startVoice(Layer* layer, int delay, const TriggerEvent& event) noexc
+         }
+         impl.updateLoopInformation();
+         impl.speedRatio_ = static_cast<float>(impl.currentPromise_->information.sampleRate / impl.sampleRate_);
+-        impl.sourcePosition_ = sampleOffset(region, midiState);
++        impl.sourcePosition_ = sampleOffset(region, midiState, curveSet);
+     }
+ 
+     // do Scala retuning and reconvert the frequency into a 12TET key number
 @@ -974,7 +974,7 @@ void Voice::Impl::panStageMono(AudioSpan<float> buffer) noexcept
      copy<float>(leftBuffer, rightBuffer);
  

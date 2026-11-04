@@ -5,7 +5,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
+#include <unistd.h>
 #include <string>
 #include <vector>
 
@@ -69,11 +71,11 @@ struct Render {
 
 struct Synth {
     sfz::Sfizz s;
-    explicit Synth(const std::string& sfz)
+    explicit Synth(const std::string& sfz, const std::string& path = "/virtual/test.sfz")
     {
         s.setSampleRate(kRate);
         s.setSamplesPerBlock(kBlock);
-        loaded = s.loadSfzString("/virtual/test.sfz", sfz);
+        loaded = s.loadSfzString(path, sfz);
     }
     bool loaded = false;
 
@@ -83,6 +85,15 @@ struct Synth {
             if (op == opcode)
                 return false;
         return true;
+    }
+
+    // sample index where the sound starts
+    static size_t onset(const Render& r)
+    {
+        for (size_t i = 0; i < r.left.size(); ++i)
+            if (std::fabs(r.left[i]) > 1e-4f)
+                return i;
+        return r.left.size();
     }
 
     // plays `key` for `seconds`, with CCs set first
@@ -120,6 +131,53 @@ void filegDepthCc()
     check(s.loaded && s.knows("fileg_depthcc20"), "fileg_depthccN recognised (SFZ v1 spelling of fileg_depth_onccN)");
     Render closed = s.play(60, 0.2f, { { 20, 0 } }), open = s.play(60, 0.2f, { { 20, 127 } });
     check(open.rmsL() > 1.5f * closed.rmsL(), "fileg_depthccN: CC 20 opens the filter");
+}
+
+// a mono 16-bit WAV: half a second of silence, then half a second of tone
+std::string writeHalfSilentWav()
+{
+    char dir[] = "/tmp/sfz123-opcode-test-XXXXXX";
+    std::string path = std::string(mkdtemp(dir)) + "/half.wav";
+    const uint32_t frames = uint32_t(kRate), bytes = frames * 2;
+    FILE* f = std::fopen(path.c_str(), "wb");
+    auto u32 = [&](uint32_t v) { std::fwrite(&v, 4, 1, f); };
+    auto u16 = [&](uint16_t v) { std::fwrite(&v, 2, 1, f); };
+    std::fwrite("RIFF", 1, 4, f), u32(36 + bytes), std::fwrite("WAVEfmt ", 1, 8, f);
+    u32(16), u16(1), u16(1), u32(uint32_t(kRate)), u32(uint32_t(kRate) * 2), u16(2), u16(16);
+    std::fwrite("data", 1, 4, f), u32(bytes);
+    for (uint32_t i = 0; i < frames; ++i)
+        u16(uint16_t(int16_t(i < frames / 2 ? 0 : 8000 * std::sin(2 * M_PI * 440 * i / kRate))));
+    std::fclose(f);
+    return path;
+}
+
+// curve 9 is a step: 0 below CC value 64, full above
+const char* kStepCurve = "<curve> curve_index=9 v000=0 v063=0 v064=1 v127=1\n";
+
+void offsetCurveCc()
+{
+    std::string wav = writeHalfSilentWav();
+    std::string dir = wav.substr(0, wav.rfind('/'));
+    std::string region = "<region> sample=half.wav offset_oncc20=24000 ";
+    Synth linear(region, dir + "/test.sfz");
+    Synth curved(std::string(kStepCurve) + region + "offset_curvecc20=9", dir + "/test.sfz");
+    check(curved.loaded && curved.knows("offset_curvecc20"), "offset_curveccN recognised");
+    // CC 20 at 50: linear skips 9449 frames of the silence, the step curve none
+    size_t a = Synth::onset(linear.play(60, 0.8f, { { 20, 50 } })), b = Synth::onset(curved.play(60, 0.8f, { { 20, 50 } }));
+    check(a > 13000 && a < 16000, "offset_onccN: linear CC offset (sound after " + std::to_string(a) + " frames)");
+    check(b > 23000 && b < 25000, "offset_curveccN: the curve maps CC 20 = 50 to no offset (sound after " + std::to_string(b) + " frames)");
+    std::remove(wav.c_str());
+    rmdir(dir.c_str());
+}
+
+void delayCurveCc()
+{
+    std::string region = "<region> sample=*sine delay_oncc20=0.5 ";
+    Synth linear(region), curved(std::string(kStepCurve) + region + "delay_curvecc20=9");
+    check(curved.knows("delay_curvecc20"), "delay_curveccN recognised");
+    size_t a = Synth::onset(linear.play(60, 0.5f, { { 20, 50 } })), b = Synth::onset(curved.play(60, 0.5f, { { 20, 50 } }));
+    check(a > 8000 && a < 10000, "delay_onccN: linear CC delay (" + std::to_string(a) + " frames)");
+    check(b < 100, "delay_curveccN: the curve maps CC 20 = 50 to no delay (" + std::to_string(b) + " frames)");
 }
 
 // LFO 1 wobbles the volume by up to 12 dB; LFO 2 (constant 1: a sine stopped at its peak) drives it
@@ -167,6 +225,8 @@ int main()
     lfoFreqLfo();
     lfoDepthLfo();
     egDepthLfo();
+    offsetCurveCc();
+    delayCurveCc();
     std::printf("%s\n", failures ? "FAILED" : "all passed");
     return failures ? 1 : 0;
 }
