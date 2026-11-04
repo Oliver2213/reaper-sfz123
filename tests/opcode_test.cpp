@@ -176,6 +176,17 @@ void headerTune()
         "header tuning adds up: +100 +100 -1300 cents (" + std::to_string(f0) + " Hz to " + std::to_string(f1) + " Hz)");
 }
 
+void panLaw()
+{
+    Synth center("<region> sample=*sine"), mma("<region> sample=*sine pan=50"), bal("<region> sample=*sine pan=50 pan_law=balance");
+    check(bal.knows("pan_law"), "pan_law recognised");
+    Render c = center.play(60, 0.2f), m = mma.play(60, 0.2f), b = bal.play(60, 0.2f);
+    float right = b.rmsR() / c.rmsR(), left = b.rmsL() / c.rmsL(), mmaRight = m.rmsR() / c.rmsR();
+    check(std::fabs(right - 1) < 0.02f && std::fabs(left - 0.5f) < 0.02f,
+        "pan_law=balance: panned halfway right keeps the right side and halves the left (" + std::to_string(right) + ", " + std::to_string(left) + ")");
+    check(mmaRight > 1.25f, "the default constant-power law raises the near side (" + std::to_string(mmaRight) + ")");
+}
+
 void filegDepthCc()
 {
     Synth s("<region> sample=*saw cutoff=200 fileg_attack=0 fileg_sustain=100 fileg_depthcc20=4800");
@@ -411,6 +422,7 @@ int main()
     filegDepthCc();
     phaseInvert();
     headerTune();
+    panLaw();
     lfoFreqLfo();
     lfoDepthLfo();
     lfoFeedback();

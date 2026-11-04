@@ -457,8 +457,46 @@ index 27ea2e2..08dbfad 100644
  }
  
  } // namespace sfz
+diff --git a/src/sfizz/Panning.cpp b/src/sfizz/Panning.cpp
+index 7458878..a75bd8d 100644
+--- a/src/sfizz/Panning.cpp
++++ b/src/sfizz/Panning.cpp
+@@ -39,6 +39,16 @@ float panLookup(float pan)
+     return panData[index];
+ }
+ 
++void balance(absl::Span<const float> panEnvelope, absl::Span<float> leftBuffer, absl::Span<float> rightBuffer) noexcept
++{
++    const size_t size = minSpanSize(panEnvelope, leftBuffer, rightBuffer);
++    for (size_t i = 0; i < size; ++i) {
++        const float p = clamp(panEnvelope[i], -1.0f, 1.0f);
++        leftBuffer[i] *= std::min(1.0f, 1.0f - p);
++        rightBuffer[i] *= std::min(1.0f, 1.0f + p);
++    }
++}
++
+ inline void tickPan(const float* pan, float* leftBuffer, float* rightBuffer)
+ {
+     auto p = (*pan + 1.0f) * 0.5f;
+diff --git a/src/sfizz/Panning.h b/src/sfizz/Panning.h
+index eddb4d4..2b0f8db 100644
+--- a/src/sfizz/Panning.h
++++ b/src/sfizz/Panning.h
+@@ -40,6 +40,12 @@ inline void pan(absl::Span<const float> panEnvelope, absl::Span<float> leftBuffe
+  * @param rightBuffer
+  * @param size
+  */
++/**
++ * @brief Pans with the balance law (ARIA pan_law=balance): full level on both sides
++ * when centered, and only the far side turned down.
++ */
++void balance(absl::Span<const float> panEnvelope, absl::Span<float> leftBuffer, absl::Span<float> rightBuffer) noexcept;
++
+ void width(const float* widthEnvelope, float* leftBuffer, float* rightBuffer, unsigned size) noexcept;
+ inline void width(absl::Span<const float> widthEnvelope, absl::Span<float> leftBuffer, absl::Span<float> rightBuffer) noexcept
+ {
 diff --git a/src/sfizz/Region.cpp b/src/sfizz/Region.cpp
-index be799ae..0431fa2 100644
+index be799ae..2707a9e 100644
 --- a/src/sfizz/Region.cpp
 +++ b/src/sfizz/Region.cpp
 @@ -89,6 +89,11 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
@@ -495,7 +533,7 @@ index be799ae..0431fa2 100644
      case hash("polyphony"):
          polyphony = opcode.read(Default::polyphony);
          break;
-@@ -432,9 +445,79 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
+@@ -432,9 +445,83 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
      case hash("pan"):
          pan = opcode.read(Default::pan);
          break;
@@ -566,6 +604,10 @@ index be799ae..0431fa2 100644
 +    case hash("phase"):
 +        invertPhase = opcode.value == "invert";
 +        break;
++    case hash("pan_law"):
++        // ARIA treats its deprecated no_law as balance
++        balancePanLaw = opcode.value == "balance" || opcode.value == "no_law";
++        break;
 +    case hash("pan_keycenter"):
 +        panKeycenter = opcode.read(Default::key);
 +        break;
@@ -575,7 +617,7 @@ index be799ae..0431fa2 100644
      case hash("position"):
          position = opcode.read(Default::position);
          break;
-@@ -562,6 +645,15 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
+@@ -562,6 +649,15 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
      case hash("group_volume"):
          groupVolume = opcode.read(Default::volume);
          break;
@@ -591,7 +633,7 @@ index be799ae..0431fa2 100644
  
      case hash("lotimer"):
          timerRange.setStart(opcode.read(Default::loTimer));
-@@ -1101,6 +1193,21 @@ bool sfz::Region::parseEGOpcode(const Opcode& opcode, EGDescription& eg)
+@@ -1101,6 +1197,21 @@ bool sfz::Region::parseEGOpcode(const Opcode& opcode, EGDescription& eg)
      case_any_eg("release"):
          eg.release = opcode.read(Default::egRelease);
          break;
@@ -613,7 +655,7 @@ index be799ae..0431fa2 100644
      case_any_eg("start"):
          eg.start = opcode.read(Default::egPercent);
          break;
-@@ -1243,23 +1350,44 @@ bool sfz::Region::parseEGOpcode(const Opcode& opcode, absl::optional<EGDescripti
+@@ -1243,23 +1354,44 @@ bool sfz::Region::parseEGOpcode(const Opcode& opcode, absl::optional<EGDescripti
      return parsed;
  }
  
@@ -666,7 +708,7 @@ index be799ae..0431fa2 100644
      //
      auto getOrCreateLFOStep = [&opcode, &lfo]() -> float* {
          const unsigned stepNumber1Based = opcode.parameters[1];
-@@ -1311,6 +1439,28 @@ bool sfz::Region::parseLFOOpcodeV2(const Opcode& opcode)
+@@ -1311,6 +1443,28 @@ bool sfz::Region::parseLFOOpcodeV2(const Opcode& opcode)
      case hash("lfo&_freq"):
          lfo.freq = opcode.read(Default::lfoFreq);
          break;
@@ -695,7 +737,7 @@ index be799ae..0431fa2 100644
      case_any_ccN("lfo&_freq"):
          processGenericCc(opcode, Default::lfoFreqMod, ModKey::createNXYZ(ModId::LFOFrequency, id, lfoNumber));
          break;
-@@ -1704,6 +1854,19 @@ bool sfz::Region::parseEGOpcodeV2(const Opcode& opcode)
+@@ -1704,6 +1858,19 @@ bool sfz::Region::parseEGOpcodeV2(const Opcode& opcode)
          EG_target_cc(ModKey::createNXYZ(ModId::LFOFrequency, id, opcode.parameters[1] - 1), Default::lfoFreqMod);
          break;
  
@@ -715,7 +757,7 @@ index be799ae..0431fa2 100644
  
      default:
          return false;
-@@ -1861,6 +2024,72 @@ sfz::Region::Connection* sfz::Region::getConnection(const ModKey& source, const
+@@ -1861,6 +2028,72 @@ sfz::Region::Connection* sfz::Region::getConnection(const ModKey& source, const
      return (it == connections.end()) ? nullptr : &*it;
  }
  
@@ -789,7 +831,7 @@ index be799ae..0431fa2 100644
  {
      if (Connection* c = getConnection(source, target))
 diff --git a/src/sfizz/Region.h b/src/sfizz/Region.h
-index b882c44..223f152 100644
+index b882c44..9f632af 100644
 --- a/src/sfizz/Region.h
 +++ b/src/sfizz/Region.h
 @@ -198,6 +198,12 @@ struct Region {
@@ -825,17 +867,18 @@ index b882c44..223f152 100644
      absl::optional<uint32_t> notePolyphony {}; // note_polyphony
      uint32_t polyphony { config::maxVoices }; // polyphony
      SelfMask selfMask { Default::selfMask };
-@@ -320,6 +329,9 @@ struct Region {
+@@ -320,6 +329,10 @@ struct Region {
      float position { Default::position }; // position
      uint8_t ampKeycenter { Default::key }; // amp_keycenter
      float ampKeytrack { Default::ampKeytrack }; // amp_keytrack
 +    uint8_t panKeycenter { Default::key }; // pan_keycenter
 +    float panKeytrack { Default::panKeytrack }; // pan_keytrack
 +    bool invertPhase { false }; // phase=invert
++    bool balancePanLaw { false }; // pan_law=balance (otherwise mma, sfizz's constant power)
      float ampVeltrack { Default::ampVeltrack }; // amp_veltrack
      CCMap<ModifierCurvePair<float>> ampVeltrackCC { ModifierCurvePair<float>{ Default::ampVeltrackMod, Default::curveCC } };
      std::vector<std::pair<uint8_t, float>> velocityPoints; // amp_velcurve_N
-@@ -344,6 +356,9 @@ struct Region {
+@@ -344,6 +357,9 @@ struct Region {
      float globalVolume { 0.0 }; // global_volume
      float masterVolume { 0.0 }; // master_volume
      float groupVolume { 0.0 }; // group_volume
@@ -845,7 +888,7 @@ index b882c44..223f152 100644
  
      // Filters and EQs
      std::vector<EQDescription> equalizers;
-@@ -395,8 +410,24 @@ struct Region {
+@@ -395,8 +411,24 @@ struct Region {
          float velToDepth = 0.0f;
      };
      std::vector<Connection> connections;
@@ -951,7 +994,7 @@ index c5e2bb3..b9f5f36 100644
      // Create the amplitude envelope
      if (!lastRegion->flexAmpEG)
 diff --git a/src/sfizz/Voice.cpp b/src/sfizz/Voice.cpp
-index e5233aa..7ecff7f 100644
+index e5233aa..6e21fb9 100644
 --- a/src/sfizz/Voice.cpp
 +++ b/src/sfizz/Voice.cpp
 @@ -435,7 +435,7 @@ bool Voice::startVoice(Layer* layer, int delay, const TriggerEvent& event) noexc
@@ -999,7 +1042,7 @@ index e5233aa..7ecff7f 100644
      buffer.applyGain(*modulationSpan);
  }
  
-@@ -974,7 +980,7 @@ void Voice::Impl::panStageMono(AudioSpan<float> buffer) noexcept
+@@ -974,16 +980,22 @@ void Voice::Impl::panStageMono(AudioSpan<float> buffer) noexcept
      copy<float>(leftBuffer, rightBuffer);
  
      // Apply panning
@@ -1008,7 +1051,26 @@ index e5233aa..7ecff7f 100644
      if (float* mod = mm.getModulation(panTarget_)) {
          for (size_t i = 0; i < numSamples; ++i)
              (*modulationSpan)[i] += mod[i];
-@@ -1002,7 +1008,7 @@ void Voice::Impl::panStageStereo(AudioSpan<float> buffer) noexcept
+     }
+-    pan(*modulationSpan, leftBuffer, rightBuffer);
++    if (region_->balancePanLaw)
++        balance(*modulationSpan, leftBuffer, rightBuffer);
++    else
++        pan(*modulationSpan, leftBuffer, rightBuffer);
+ 
+-    // add +3dB (10^(3/20)) to compensate for the pan stage (-3dB per stage)
+-    applyGain1(1.4125375446227544f, leftBuffer);
+-    applyGain1(1.4125375446227544f, rightBuffer);
++    // add +3dB (10^(3/20)) to compensate for the pan stage (-3dB per stage); a balance-law pan
++    // is 0 dB centered
++    if (!region_->balancePanLaw) {
++        applyGain1(1.4125375446227544f, leftBuffer);
++        applyGain1(1.4125375446227544f, rightBuffer);
++    }
+ }
+ 
+ void Voice::Impl::panStageStereo(AudioSpan<float> buffer) noexcept
+@@ -1002,12 +1014,15 @@ void Voice::Impl::panStageStereo(AudioSpan<float> buffer) noexcept
      ModMatrix& mm = resources_.getModMatrix();
  
      // Apply panning
@@ -1017,6 +1079,29 @@ index e5233aa..7ecff7f 100644
      if (float* mod = mm.getModulation(panTarget_)) {
          for (size_t i = 0; i < numSamples; ++i)
              (*modulationSpan)[i] += mod[i];
+     }
+-    pan(*modulationSpan, leftBuffer, rightBuffer);
++    if (region_->balancePanLaw)
++        balance(*modulationSpan, leftBuffer, rightBuffer);
++    else
++        pan(*modulationSpan, leftBuffer, rightBuffer);
+ 
+     // Apply the width/position process
+     fill(*modulationSpan, region_->width);
+@@ -1024,9 +1039,10 @@ void Voice::Impl::panStageStereo(AudioSpan<float> buffer) noexcept
+     }
+     pan(*modulationSpan, leftBuffer, rightBuffer);
+ 
+-    // add +6dB (10^(6/20)) to compensate for the 2 pan stages (-3dB per stage)
+-    applyGain1(1.9952623149688797f, leftBuffer);
+-    applyGain1(1.9952623149688797f, rightBuffer);
++    // compensate for the 2 pan stages (-3dB each), except a balance-law pan, which is 0 dB centered
++    const float compensation = region_->balancePanLaw ? 1.4125375446227544f : 1.9952623149688797f;
++    applyGain1(compensation, leftBuffer);
++    applyGain1(compensation, rightBuffer);
+ }
+ 
+ void Voice::Impl::filterStageMono(AudioSpan<float> buffer) noexcept
 diff --git a/src/sfizz/modulations/ModId.cpp b/src/sfizz/modulations/ModId.cpp
 index 29b563c..2843725 100644
 --- a/src/sfizz/modulations/ModId.cpp

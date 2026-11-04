@@ -73,6 +73,7 @@ Changes made to the SFLT core (`vendor/sfl2`):
 sfizz is archived upstream, so SFZ opcodes it lacks are added in `patches/sfizz.patch`:
 - `pan_keytrack`, `pan_keycenter`
 - `global_tune`, `master_tune`, `group_tune` (ARIA), which tune everything under that header
+- `pan_law=balance` (ARIA; also its deprecated `no_law`): both sides at full level when centered, only the far side turned down. `mma`, the default, keeps sfizz's constant-power law
 - `phase=invert` (SFZ v2), which flips a region's polarity, as in DrumGizmo's snare bottom mics
 - `fileg_depthccN`, `pitcheg_depthccN` (SFZ v1 spellings of `_depth_onccN`)
 - `lfoN_freq_lfoX`, `lfoN_depth_lfoX` and `egN_depth_lfoX`, with `_onccY` variants: one LFO or EG changing another LFO's rate (in Hz) or scaling its output (in %). Feedback loops (LFOs modulating each other, or themselves) work as in ARIA, with a delay of one processing block
