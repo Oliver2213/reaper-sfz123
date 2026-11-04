@@ -442,7 +442,7 @@ index 27ea2e2..08dbfad 100644
  
  } // namespace sfz
 diff --git a/src/sfizz/Region.cpp b/src/sfizz/Region.cpp
-index be799ae..139611b 100644
+index be799ae..bdfa196 100644
 --- a/src/sfizz/Region.cpp
 +++ b/src/sfizz/Region.cpp
 @@ -89,6 +89,11 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
@@ -479,7 +479,7 @@ index be799ae..139611b 100644
      case hash("polyphony"):
          polyphony = opcode.read(Default::polyphony);
          break;
-@@ -432,9 +445,55 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
+@@ -432,9 +445,76 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
      case hash("pan"):
          pan = opcode.read(Default::pan);
          break;
@@ -509,8 +509,29 @@ index be799ae..139611b 100644
 +    }
 +    case hash("var&_cutoff"):
 +        return addVariableTarget(opcode, ModKey::createNXYZ(ModId::FilCutoff, id, 0), Default::filterCutoffMod);
++    case hash("var&_cutoff&"): // cutoff2, ...
++        if (opcode.parameters[1] < 1 || opcode.parameters[1] > config::filtersPerVoice)
++            return false;
++        return addVariableTarget(opcode, ModKey::createNXYZ(ModId::FilCutoff, id, opcode.parameters[1] - 1), Default::filterCutoffMod);
 +    case hash("var&_resonance"):
 +        return addVariableTarget(opcode, ModKey::createNXYZ(ModId::FilResonance, id, 0), Default::filterResonanceMod);
++    case hash("var&_resonance&"):
++        if (opcode.parameters[1] < 1 || opcode.parameters[1] > config::filtersPerVoice)
++            return false;
++        return addVariableTarget(opcode, ModKey::createNXYZ(ModId::FilResonance, id, opcode.parameters[1] - 1), Default::filterResonanceMod);
++    case hash("var&_eq&gain"):
++    case hash("var&_eq&freq"):
++    case hash("var&_eq&bw"):
++    {
++        const unsigned band = opcode.parameters[1];
++        if (band < 1 || band > config::eqsPerVoice)
++            return false;
++        if (opcode.lettersOnlyHash == hash("var&_eq&gain"))
++            return addVariableTarget(opcode, ModKey::createNXYZ(ModId::EqGain, id, band - 1), Default::eqGainMod);
++        if (opcode.lettersOnlyHash == hash("var&_eq&freq"))
++            return addVariableTarget(opcode, ModKey::createNXYZ(ModId::EqFrequency, id, band - 1), Default::eqFrequencyMod);
++        return addVariableTarget(opcode, ModKey::createNXYZ(ModId::EqBandwidth, id, band - 1), Default::eqBandwidthMod);
++    }
 +    case hash("var&_pitch"):
 +        return addVariableTarget(opcode, ModKey::createNXYZ(ModId::Pitch, id), Default::pitchMod);
 +    case hash("var&_volume"):
@@ -535,7 +556,7 @@ index be799ae..139611b 100644
      case hash("position"):
          position = opcode.read(Default::position);
          break;
-@@ -1101,6 +1160,21 @@ bool sfz::Region::parseEGOpcode(const Opcode& opcode, EGDescription& eg)
+@@ -1101,6 +1181,21 @@ bool sfz::Region::parseEGOpcode(const Opcode& opcode, EGDescription& eg)
      case_any_eg("release"):
          eg.release = opcode.read(Default::egRelease);
          break;
@@ -557,7 +578,7 @@ index be799ae..139611b 100644
      case_any_eg("start"):
          eg.start = opcode.read(Default::egPercent);
          break;
-@@ -1243,23 +1317,44 @@ bool sfz::Region::parseEGOpcode(const Opcode& opcode, absl::optional<EGDescripti
+@@ -1243,23 +1338,44 @@ bool sfz::Region::parseEGOpcode(const Opcode& opcode, absl::optional<EGDescripti
      return parsed;
  }
  
@@ -610,7 +631,7 @@ index be799ae..139611b 100644
      //
      auto getOrCreateLFOStep = [&opcode, &lfo]() -> float* {
          const unsigned stepNumber1Based = opcode.parameters[1];
-@@ -1311,6 +1406,28 @@ bool sfz::Region::parseLFOOpcodeV2(const Opcode& opcode)
+@@ -1311,6 +1427,28 @@ bool sfz::Region::parseLFOOpcodeV2(const Opcode& opcode)
      case hash("lfo&_freq"):
          lfo.freq = opcode.read(Default::lfoFreq);
          break;
@@ -639,7 +660,7 @@ index be799ae..139611b 100644
      case_any_ccN("lfo&_freq"):
          processGenericCc(opcode, Default::lfoFreqMod, ModKey::createNXYZ(ModId::LFOFrequency, id, lfoNumber));
          break;
-@@ -1704,6 +1821,19 @@ bool sfz::Region::parseEGOpcodeV2(const Opcode& opcode)
+@@ -1704,6 +1842,19 @@ bool sfz::Region::parseEGOpcodeV2(const Opcode& opcode)
          EG_target_cc(ModKey::createNXYZ(ModId::LFOFrequency, id, opcode.parameters[1] - 1), Default::lfoFreqMod);
          break;
  
@@ -659,7 +680,7 @@ index be799ae..139611b 100644
  
      default:
          return false;
-@@ -1861,6 +1991,72 @@ sfz::Region::Connection* sfz::Region::getConnection(const ModKey& source, const
+@@ -1861,6 +2012,72 @@ sfz::Region::Connection* sfz::Region::getConnection(const ModKey& source, const
      return (it == connections.end()) ? nullptr : &*it;
  }
  

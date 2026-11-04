@@ -240,6 +240,19 @@ void variables()
     Synth cutoff("<region> sample=*saw cutoff=200 var01_cutoff=4800 var01_oncc20=1");
     check(cutoff.play(60, 0.2f, { { 20, 127 } }).rmsL() > 1.5f * cutoff.play(60, 0.2f, { { 20, 0 } }).rmsL(),
         "varNN_cutoff: CC 20 opens the filter");
+
+    Synth cutoff2("<region> sample=*saw cutoff=20000 fil2_type=lpf_2p cutoff2=200 var01_cutoff2=4800 var01_oncc20=1");
+    check(cutoff2.knows("var01_cutoff2") && cutoff2.play(60, 0.2f, { { 20, 127 } }).rmsL() > 1.5f * cutoff2.play(60, 0.2f, { { 20, 0 } }).rmsL(),
+        "varNN_cutoff2: CC 20 opens the second filter");
+
+    // a sine at C6 (1047 Hz) through an EQ band at 1 kHz
+    Synth eq("<region> sample=*sine eq1_freq=1000 eq1_bw=1 eq1_gain=0 var01_eq1gain=12 var01_oncc20=1");
+    check(eq.knows("var01_eq1gain"), "varNN_eqNgain recognised");
+    float boost = db(eq.play(84, 0.2f, { { 20, 127 } }).rmsL(), eq.play(84, 0.2f, { { 20, 0 } }).rmsL());
+    check(boost > 8, "varNN_eqNgain: CC 20 boosts the EQ band (" + std::to_string(boost) + " dB)");
+    Synth eqf("<region> sample=*sine eq1_freq=4000 eq1_bw=0.5 eq1_gain=12 var01_eq1freq=-3000 var01_oncc20=1");
+    float moved = db(eqf.play(84, 0.2f, { { 20, 127 } }).rmsL(), eqf.play(84, 0.2f, { { 20, 0 } }).rmsL());
+    check(eqf.knows("var01_eq1freq") && moved > 6, "varNN_eqNfreq: CC 20 moves the band onto the note (" + std::to_string(moved) + " dB)");
 }
 
 // envelope level (0..1) at `t` seconds, relative to the full level at `ref` seconds
