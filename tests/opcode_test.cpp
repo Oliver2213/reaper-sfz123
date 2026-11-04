@@ -267,6 +267,30 @@ void envelopeShapes()
     float d = levelAt(decay.play(60, 0.5f), 0.1f, 0.003f);
     check(std::fabs(d - 0.75f) < 0.04f, "ampeg_decay_shape=0 falls in a straight line (" + std::to_string(d) + " at a quarter)");
 
+    // ampeg_sustain=50 is -6 dB, half amplitude; decay 0.4 s on a straight line
+    auto decayLevels = [](const char* zero) {
+        Synth s(std::string("<region> sample=*sine ampeg_decay=0.4 ampeg_sustain=50 ampeg_decay_shape=0 ") + zero);
+        Render r = s.play(60, 0.5f);
+        return std::make_pair(levelAt(r, 0.1f, 0.003f), levelAt(r, 0.3f, 0.003f));
+    };
+    auto [d1a, d1b] = decayLevels("");
+    check(std::fabs(d1a - 0.75f) < 0.04f && std::fabs(d1b - 0.5f) < 0.03f,
+        "ampeg_decay_zero=1 (default): the decay time is to silence, so it stops at sustain halfway (" + std::to_string(d1a) + ", " + std::to_string(d1b) + ")");
+    auto [d0a, d0b] = decayLevels("ampeg_decay_zero=0");
+    check(std::fabs(d0a - 0.875f) < 0.04f && std::fabs(d0b - 0.625f) < 0.04f,
+        "ampeg_decay_zero=0: the decay takes the whole time to reach sustain (" + std::to_string(d0a) + ", " + std::to_string(d0b) + ")");
+    check(Synth("<region> sample=*sine ampeg_decay_zero=0").knows("ampeg_decay_zero"), "ampeg_decay_zero recognised");
+
+    // release 0.4 s from sustain at half level, straight line; 0.1 s after the release
+    auto releaseLevel = [](const char* zero) {
+        Synth s(std::string("<region> sample=*sine ampeg_sustain=50 ampeg_release=0.4 ampeg_release_shape=0 ") + zero);
+        return levelAt(s.playReleased(60, 0.2f, 0.7f), 0.2f + 0.1f, 0.15f);
+    };
+    float r0 = releaseLevel(""), r1 = releaseLevel("ampeg_release_zero=1");
+    check(std::fabs(r0 - 0.75f) < 0.05f, "ampeg_release_zero=0 (default): the release takes the whole time from sustain (" + std::to_string(r0) + ")");
+    check(std::fabs(r1 - 0.5f) < 0.05f, "ampeg_release_zero=1: a fixed fall from full level, so twice as fast from half level (" + std::to_string(r1) + ")");
+    check(Synth("<region> sample=*sine ampeg_release_zero=1").knows("ampeg_release_zero"), "ampeg_release_zero recognised");
+
     Synth release("<region> sample=*sine ampeg_release=0.4 ampeg_release_shape=0");
     check(release.knows("ampeg_release_shape"), "ampeg_release_shape recognised");
     float rl = levelAt(release.playReleased(60, 0.2f, 0.7f), 0.4f, 0.15f);
