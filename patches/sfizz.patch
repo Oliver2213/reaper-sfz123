@@ -1,5 +1,220 @@
+diff --git a/src/sfizz/ADSREnvelope.cpp b/src/sfizz/ADSREnvelope.cpp
+index b6080fc..3fdb185 100644
+--- a/src/sfizz/ADSREnvelope.cpp
++++ b/src/sfizz/ADSREnvelope.cpp
+@@ -38,6 +38,16 @@ Float ADSREnvelope::secondsToExpRate(Float timeInSeconds) const noexcept
+     return std::exp(Float(-9.0) / (timeInSeconds * sampleRate));
+ };
+ 
++// ARIA's envelope curve: 0 is linear, positive starts slowly, negative starts quickly.
++// Its default release shape, -10.3616 (ln of 90 dB), is an exponential fall.
++static Float shapeCurve(Float x, Float shape) noexcept
++{
++    shape = clamp(shape, Float(-50), Float(50));
++    if (std::fabs(shape) < Float(1e-3))
++        return x;
++    return std::expm1(shape * x) / std::expm1(shape);
++}
++
+ void ADSREnvelope::reset(const EGDescription& desc, const Region& region, int delay, float velocity, float sampleRate) noexcept
+ {
+     this->sampleRate = sampleRate;
+@@ -53,6 +63,8 @@ void ADSREnvelope::reset(const EGDescription& desc, const Region& region, int de
+         || (region.loopMode == LoopMode::one_shot && region.isOscillator())
+     );
+     currentValue = this->start;
++    segmentPos_ = 0;
++    segmentStart_ = currentValue;
+ }
+ 
+ void ADSREnvelope::updateValues(int delay) noexcept
+@@ -66,6 +78,12 @@ void ADSREnvelope::updateValues(int delay) noexcept
+     this->sustain = clamp(desc_->getSustain(midiState_, curveSet_, triggerVelocity_, delay), 0.0f, 1.0f);
+     this->start = clamp(desc_->getStart(midiState_, curveSet_, triggerVelocity_, delay), 0.0f, 1.0f);
+     sustainThreshold = this->sustain + config::virtuallyZero;
++    attackShape_ = desc_->attackShape;
++    decayShape_ = desc_->decayShape;
++    releaseShape_ = desc_->releaseShape;
++    attackLength_ = secondsToSamples(desc_->getAttack(midiState_, curveSet_, triggerVelocity_, delay));
++    decayLength_ = secondsToSamples(desc_->getDecay(midiState_, curveSet_, triggerVelocity_, delay));
++    releaseLength_ = secondsToSamples(std::max(Float(Default::offTime), desc_->getRelease(midiState_, curveSet_, triggerVelocity_, delay)));
+ }
+ 
+ void ADSREnvelope::getBlock(absl::Span<Float> output) noexcept
+@@ -92,6 +110,13 @@ void ADSREnvelope::getBlockInternal(absl::Span<Float> output) noexcept
+     bool shouldRelease = this->shouldRelease;
+     int releaseDelay = this->releaseDelay;
+     Float transitionDelta = this->transitionDelta;
++    int segmentPos = this->segmentPos_;
++    Float segmentStart = this->segmentStart_;
++    auto enter = [&](State state) {
++        currentState = state;
++        segmentPos = 0;
++        segmentStart = currentValue;
++    };
+ 
+     while (!output.empty()) {
+         size_t count = 0;
+@@ -104,7 +129,7 @@ void ADSREnvelope::getBlockInternal(absl::Span<Float> output) noexcept
+             } else if (releaseDelay == 0 && delay <= 0) {
+                 if (delay < 0) {
+                     // release takes effect this frame
+-                    currentState = State::Release;
++                    enter(State::Release);
+                 } else {
+                     // release takes effect the next frame
+                     size = 1;
+@@ -112,7 +137,7 @@ void ADSREnvelope::getBlockInternal(absl::Span<Float> output) noexcept
+                 releaseDelay = -1;
+             } else if (releaseDelay == -1 && currentState < State::Release && delay <= 0) {
+                 // release takes effect this frame
+-                currentState = State::Release;
++                enter(State::Release);
+             }
+         }
+ 
+@@ -125,27 +150,50 @@ void ADSREnvelope::getBlockInternal(absl::Span<Float> output) noexcept
+                 output[count++] = currentValue;
+             }
+             if (delay <= 0)
+-                currentState = State::Attack;
++                enter(State::Attack);
+             break;
+         case State::Attack:
++            if (attackShape_) {
++                while (count < size && segmentPos < attackLength_) {
++                    currentValue = segmentStart + (1 - segmentStart) * shapeCurve(Float(++segmentPos) / attackLength_, *attackShape_);
++                    output[count++] = currentValue;
++                }
++                if (segmentPos >= attackLength_) {
++                    currentValue = 1;
++                    enter(State::Hold);
++                }
++                break;
++            }
+             while (count < size && (currentValue += attackStep) < 1)
+                 output[count++] = currentValue;
+             if (currentValue >= 1) {
+                 currentValue = 1;
+-                currentState = State::Hold;
++                enter(State::Hold);
+             }
+             break;
+         case State::Hold:
+             while (count < size && hold-- > 0)
+                 output[count++] = currentValue;
+             if (hold <= 0)
+-                currentState = State::Decay;
++                enter(State::Decay);
+             break;
+         case State::Decay:
++            if (decayShape_) {
++                while (count < size && segmentPos < decayLength_) {
++                    currentValue = sustain + (segmentStart - sustain) * (1 - shapeCurve(Float(++segmentPos) / decayLength_, *decayShape_));
++                    output[count++] = currentValue;
++                }
++                if (segmentPos >= decayLength_) {
++                    currentValue = sustain;
++                    transitionDelta = 0;
++                    enter(State::Sustain);
++                }
++                break;
++            }
+             while (count < size && (currentValue *= decayRate) > sustain)
+                 output[count++] = currentValue;
+             if (currentValue <= sustainThreshold) {
+-                currentState = State::Sustain;
++                enter(State::Sustain);
+                 currentValue = std::max(sustain, currentValue);
+                 transitionDelta = (sustain - currentValue) / (sampleRate * config::egTransitionTime);
+             }
+@@ -162,11 +210,22 @@ void ADSREnvelope::getBlockInternal(absl::Span<Float> output) noexcept
+             }
+             break;
+         case State::Release:
++            if (releaseShape_) {
++                while (count < size && segmentPos < releaseLength_) {
++                    currentValue = segmentStart * (1 - shapeCurve(Float(++segmentPos) / releaseLength_, *releaseShape_));
++                    output[count++] = currentValue;
++                }
++                if (segmentPos >= releaseLength_) {
++                    currentValue = 0;
++                    enter(State::Done);
++                }
++                break;
++            }
+             previousValue = currentValue;
+             while (count < size && (currentValue *= releaseRate) > config::egReleaseThreshold)
+                 output[count++] = previousValue = currentValue;
+             if (currentValue <= config::egReleaseThreshold) {
+-                currentState = State::Fadeout;
++                enter(State::Fadeout);
+                 currentValue = previousValue;
+                 transitionDelta = -max(config::egReleaseThreshold, currentValue)
+                     / (sampleRate * config::egTransitionTime);
+@@ -176,8 +235,8 @@ void ADSREnvelope::getBlockInternal(absl::Span<Float> output) noexcept
+             while (count < size && (currentValue += transitionDelta) > 0)
+                 output[count++] = currentValue;
+             if (currentValue <= 0) {
+-                currentState = State::Done;
+                 currentValue = 0;
++                enter(State::Done);
+             }
+             break;
+         default:
+@@ -198,6 +257,8 @@ void ADSREnvelope::getBlockInternal(absl::Span<Float> output) noexcept
+     this->shouldRelease = shouldRelease;
+     this->releaseDelay = releaseDelay;
+     this->transitionDelta = transitionDelta;
++    this->segmentPos_ = segmentPos;
++    this->segmentStart_ = segmentStart;
+ 
+     ASSERT(!hasNanInf(output));
+ }
+@@ -212,6 +273,8 @@ void ADSREnvelope::cancelRelease(int delay) noexcept
+ {
+     (void)delay;
+     currentState = State::Sustain;
++    segmentPos_ = 0;
++    segmentStart_ = currentValue;
+     shouldRelease = false;
+     this->releaseDelay = -1;
+ }
+@@ -219,6 +282,7 @@ void ADSREnvelope::cancelRelease(int delay) noexcept
+ void ADSREnvelope::setReleaseTime(Float timeInSeconds) noexcept
+ {
+     releaseRate = secondsToExpRate(timeInSeconds);
++    releaseLength_ = secondsToSamples(std::max(Float(Default::offTime), timeInSeconds));
+ }
+ 
+ }
+diff --git a/src/sfizz/ADSREnvelope.h b/src/sfizz/ADSREnvelope.h
+index 33a4d1f..73dfdc2 100644
+--- a/src/sfizz/ADSREnvelope.h
++++ b/src/sfizz/ADSREnvelope.h
+@@ -44,6 +44,7 @@ public:
+      * @param timeInSeconds
+      */
+     void setReleaseTime(Float timeInSeconds) noexcept;
++    void setReleaseShape(absl::optional<Float> shape) noexcept { releaseShape_ = shape; }
+     /**
+      * @brief Start the envelope release after a delay.
+      *
+@@ -120,6 +121,12 @@ private:
+     bool shouldRelease { false };
+     bool freeRunning { false };
+     Float transitionDelta {};
++
++    // shaped segments (ARIA *_shape): position in the current segment and the value it began at
++    absl::optional<Float> attackShape_, decayShape_, releaseShape_;
++    int attackLength_ { 0 }, decayLength_ { 0 }, releaseLength_ { 0 };
++    int segmentPos_ { 0 };
++    Float segmentStart_ { 0 };
+     LEAK_DETECTOR(ADSREnvelope);
+ };
+ 
 diff --git a/src/sfizz/Defaults.cpp b/src/sfizz/Defaults.cpp
-index acd7746..17a36cd 100644
+index acd7746..0001522 100644
 --- a/src/sfizz/Defaults.cpp
 +++ b/src/sfizz/Defaults.cpp
 @@ -87,6 +87,7 @@ FloatSpec amplitude { 100.0f, {0.0f, 10000.0f}, kNormalizePercent|kPermissiveBou
@@ -10,17 +225,18 @@ index acd7746..17a36cd 100644
  FloatSpec position { 0.0f, {-100.0f, 100.0f}, kNormalizePercent|kPermissiveBounds };
  FloatSpec positionMod { 0.0f, {-200.0f, 200.0f}, kNormalizePercent|kPermissiveBounds };
  FloatSpec width { 100.0f, {-100.0f, 100.0f}, kNormalizePercent|kPermissiveBounds };
-@@ -135,6 +136,8 @@ FloatSpec lfoBeats { 0.0f, {0.0f, 1000.0f}, kPermissiveBounds };
+@@ -135,6 +136,9 @@ FloatSpec lfoBeats { 0.0f, {0.0f, 1000.0f}, kPermissiveBounds };
  FloatSpec lfoBeatsMod { 0.0f, {-1000.0f, 1000.0f}, kPermissiveBounds };
  FloatSpec lfoPhase { 0.0f, {0.0f, 1.0f}, kWrapPhase|kPermissiveBounds };
  FloatSpec lfoPhaseMod { 0.0f, {0.0f, 1.0f}, kPermissiveBounds };
++FloatSpec egShape { 0.0f, {-100.0f, 100.0f}, kPermissiveBounds };
 +FloatSpec varDepth { 0.0f, {-100.0f, 100.0f}, kPermissiveBounds };
 +FloatSpec lfoDepthMod { 0.0f, {-10000.0f, 10000.0f}, kNormalizePercent|kPermissiveBounds };
  FloatSpec lfoDelay { 0.0f, {0.0f, 30.0f}, kPermissiveBounds };
  FloatSpec lfoDelayMod { 0.0f, {0.0f, 30.0f}, kPermissiveBounds };
  FloatSpec lfoFade { 0.0f, {0.0f, 30.0f}, kPermissiveBounds };
 diff --git a/src/sfizz/Defaults.h b/src/sfizz/Defaults.h
-index b3fac82..e2ecfb5 100644
+index b3fac82..3cf2741 100644
 --- a/src/sfizz/Defaults.h
 +++ b/src/sfizz/Defaults.h
 @@ -244,6 +244,7 @@ namespace Default
@@ -31,15 +247,32 @@ index b3fac82..e2ecfb5 100644
      extern const OpcodeSpec<float> panMod;
      extern const OpcodeSpec<float> position;
      extern const OpcodeSpec<float> positionMod;
-@@ -293,6 +294,8 @@ namespace Default
+@@ -293,6 +294,9 @@ namespace Default
      extern const OpcodeSpec<float> lfoBeatsMod;
      extern const OpcodeSpec<float> lfoPhase;
      extern const OpcodeSpec<float> lfoPhaseMod;
 +    extern const OpcodeSpec<float> lfoDepthMod;
 +    extern const OpcodeSpec<float> varDepth;
++    extern const OpcodeSpec<float> egShape;
      extern const OpcodeSpec<float> lfoDelay;
      extern const OpcodeSpec<float> lfoDelayMod;
      extern const OpcodeSpec<float> lfoFade;
+diff --git a/src/sfizz/EGDescription.h b/src/sfizz/EGDescription.h
+index 16feb5c..5cbe904 100644
+--- a/src/sfizz/EGDescription.h
++++ b/src/sfizz/EGDescription.h
+@@ -57,6 +57,11 @@ struct EGDescription {
+     float delay { Default::egTime };
+     float hold { Default::egTime };
+     float release { Default::egTime };
++    // ARIA *_shape: when set, the segment follows a curve instead of sfizz's linear attack
++    // and exponential decay and release
++    absl::optional<float> attackShape;
++    absl::optional<float> decayShape;
++    absl::optional<float> releaseShape;
+     float start { Default::egPercent };
+     float sustain { Default::egSustain };
+     float depth { Default::egDepth };
 diff --git a/src/sfizz/LFO.cpp b/src/sfizz/LFO.cpp
 index 0564f2b..37f60ef 100644
 --- a/src/sfizz/LFO.cpp
@@ -165,7 +398,7 @@ index 27ea2e2..08dbfad 100644
  
  } // namespace sfz
 diff --git a/src/sfizz/Region.cpp b/src/sfizz/Region.cpp
-index be799ae..764abf4 100644
+index be799ae..dda523e 100644
 --- a/src/sfizz/Region.cpp
 +++ b/src/sfizz/Region.cpp
 @@ -89,6 +89,11 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
@@ -192,7 +425,17 @@ index be799ae..764abf4 100644
      case hash("end"):
          sampleEnd = opcode.read(Default::sampleEnd);
          break;
-@@ -432,9 +442,55 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
+@@ -196,6 +206,9 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
+         offMode = OffMode::time;
+         offTime = opcode.read(Default::offTime);
+         break;
++    case hash("off_shape"):
++        offShape = opcode.read(Default::egShape);
++        break;
+     case hash("polyphony"):
+         polyphony = opcode.read(Default::polyphony);
+         break;
+@@ -432,9 +445,55 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
      case hash("pan"):
          pan = opcode.read(Default::pan);
          break;
@@ -248,7 +491,23 @@ index be799ae..764abf4 100644
      case hash("position"):
          position = opcode.read(Default::position);
          break;
-@@ -1243,23 +1299,44 @@ bool sfz::Region::parseEGOpcode(const Opcode& opcode, absl::optional<EGDescripti
+@@ -1101,6 +1160,15 @@ bool sfz::Region::parseEGOpcode(const Opcode& opcode, EGDescription& eg)
+     case_any_eg("release"):
+         eg.release = opcode.read(Default::egRelease);
+         break;
++    case_any_eg("attack_shape"):
++        eg.attackShape = opcode.read(Default::egShape);
++        break;
++    case_any_eg("decay_shape"):
++        eg.decayShape = opcode.read(Default::egShape);
++        break;
++    case_any_eg("release_shape"):
++        eg.releaseShape = opcode.read(Default::egShape);
++        break;
+     case_any_eg("start"):
+         eg.start = opcode.read(Default::egPercent);
+         break;
+@@ -1243,23 +1311,44 @@ bool sfz::Region::parseEGOpcode(const Opcode& opcode, absl::optional<EGDescripti
      return parsed;
  }
  
@@ -301,7 +560,7 @@ index be799ae..764abf4 100644
      //
      auto getOrCreateLFOStep = [&opcode, &lfo]() -> float* {
          const unsigned stepNumber1Based = opcode.parameters[1];
-@@ -1311,6 +1388,28 @@ bool sfz::Region::parseLFOOpcodeV2(const Opcode& opcode)
+@@ -1311,6 +1400,28 @@ bool sfz::Region::parseLFOOpcodeV2(const Opcode& opcode)
      case hash("lfo&_freq"):
          lfo.freq = opcode.read(Default::lfoFreq);
          break;
@@ -330,7 +589,7 @@ index be799ae..764abf4 100644
      case_any_ccN("lfo&_freq"):
          processGenericCc(opcode, Default::lfoFreqMod, ModKey::createNXYZ(ModId::LFOFrequency, id, lfoNumber));
          break;
-@@ -1704,6 +1803,19 @@ bool sfz::Region::parseEGOpcodeV2(const Opcode& opcode)
+@@ -1704,6 +1815,19 @@ bool sfz::Region::parseEGOpcodeV2(const Opcode& opcode)
          EG_target_cc(ModKey::createNXYZ(ModId::LFOFrequency, id, opcode.parameters[1] - 1), Default::lfoFreqMod);
          break;
  
@@ -350,7 +609,7 @@ index be799ae..764abf4 100644
  
      default:
          return false;
-@@ -1861,6 +1973,72 @@ sfz::Region::Connection* sfz::Region::getConnection(const ModKey& source, const
+@@ -1861,6 +1985,72 @@ sfz::Region::Connection* sfz::Region::getConnection(const ModKey& source, const
      return (it == connections.end()) ? nullptr : &*it;
  }
  
@@ -424,7 +683,7 @@ index be799ae..764abf4 100644
  {
      if (Connection* c = getConnection(source, target))
 diff --git a/src/sfizz/Region.h b/src/sfizz/Region.h
-index b882c44..7dcadb4 100644
+index b882c44..23950ee 100644
 --- a/src/sfizz/Region.h
 +++ b/src/sfizz/Region.h
 @@ -198,6 +198,12 @@ struct Region {
@@ -452,7 +711,15 @@ index b882c44..7dcadb4 100644
      int64_t sampleEnd { Default::sampleEnd }; // end
      CCMap<int64_t> endCC { Default::sampleEndMod };
      absl::optional<uint32_t> sampleCount {}; // count
-@@ -320,6 +328,8 @@ struct Region {
+@@ -267,6 +275,7 @@ struct Region {
+     absl::optional<int64_t> offBy {}; // off_by
+     OffMode offMode { Default::offMode }; // off_mode
+     float offTime { Default::offTime }; // off_mode
++    absl::optional<float> offShape; // off_shape: release curve when muted by off_by
+     absl::optional<uint32_t> notePolyphony {}; // note_polyphony
+     uint32_t polyphony { config::maxVoices }; // polyphony
+     SelfMask selfMask { Default::selfMask };
+@@ -320,6 +329,8 @@ struct Region {
      float position { Default::position }; // position
      uint8_t ampKeycenter { Default::key }; // amp_keycenter
      float ampKeytrack { Default::ampKeytrack }; // amp_keytrack
@@ -461,7 +728,7 @@ index b882c44..7dcadb4 100644
      float ampVeltrack { Default::ampVeltrack }; // amp_veltrack
      CCMap<ModifierCurvePair<float>> ampVeltrackCC { ModifierCurvePair<float>{ Default::ampVeltrackMod, Default::curveCC } };
      std::vector<std::pair<uint8_t, float>> velocityPoints; // amp_velcurve_N
-@@ -395,8 +405,24 @@ struct Region {
+@@ -395,8 +406,24 @@ struct Region {
          float velToDepth = 0.0f;
      };
      std::vector<Connection> connections;
@@ -559,7 +826,7 @@ index c5e2bb3..b9f5f36 100644
      // Create the amplitude envelope
      if (!lastRegion->flexAmpEG)
 diff --git a/src/sfizz/Voice.cpp b/src/sfizz/Voice.cpp
-index e5233aa..1028633 100644
+index e5233aa..241baf9 100644
 --- a/src/sfizz/Voice.cpp
 +++ b/src/sfizz/Voice.cpp
 @@ -435,7 +435,7 @@ bool Voice::startVoice(Layer* layer, int delay, const TriggerEvent& event) noexc
@@ -580,7 +847,16 @@ index e5233aa..1028633 100644
      }
  
      // do Scala retuning and reconvert the frequency into a 12TET key number
-@@ -974,7 +974,7 @@ void Voice::Impl::panStageMono(AudioSpan<float> buffer) noexcept
+@@ -610,6 +610,8 @@ void Voice::Impl::off(int delay, bool fast) noexcept
+         } else if (region_->offMode == OffMode::time) {
+             egAmplitude_.setReleaseTime(region_->offTime);
+         }
++        if (region_->offShape)
++            egAmplitude_.setReleaseShape(region_->offShape);
+         egAmplitude_.stopDynamicUpdates();
+     }
+     else {
+@@ -974,7 +976,7 @@ void Voice::Impl::panStageMono(AudioSpan<float> buffer) noexcept
      copy<float>(leftBuffer, rightBuffer);
  
      // Apply panning
@@ -589,7 +865,7 @@ index e5233aa..1028633 100644
      if (float* mod = mm.getModulation(panTarget_)) {
          for (size_t i = 0; i < numSamples; ++i)
              (*modulationSpan)[i] += mod[i];
-@@ -1002,7 +1002,7 @@ void Voice::Impl::panStageStereo(AudioSpan<float> buffer) noexcept
+@@ -1002,7 +1004,7 @@ void Voice::Impl::panStageStereo(AudioSpan<float> buffer) noexcept
      ModMatrix& mm = resources_.getModMatrix();
  
      // Apply panning

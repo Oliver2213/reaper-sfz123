@@ -96,6 +96,27 @@ struct Synth {
         return r.left.size();
     }
 
+    // plays `key`, releases it after `holdSeconds`, renders `seconds` in all; `second` triggers another
+    // note at `secondAt` seconds if set
+    Render playReleased(int key, float holdSeconds, float seconds, int second = -1, float secondAt = 0)
+    {
+        Render r;
+        std::vector<float> l(kBlock), rr(kBlock);
+        float* out[2] = { l.data(), rr.data() };
+        s.noteOn(0, key, 127);
+        const int blocks = int(seconds * kRate / kBlock);
+        for (int n = 0; n < blocks; ++n) {
+            if (n == int(holdSeconds * kRate / kBlock))
+                s.noteOff(0, key, 0);
+            if (second >= 0 && n == int(secondAt * kRate / kBlock))
+                s.noteOn(0, second, 127);
+            s.renderBlock(out, kBlock);
+            r.left.insert(r.left.end(), l.begin(), l.end());
+        }
+        s.allSoundOff();
+        return r;
+    }
+
     // plays `key` for `seconds`, with CCs set first
     Render play(int key, float seconds, std::vector<std::pair<int, int>> ccs = {}, int velocity = 100)
     {
@@ -221,6 +242,51 @@ void variables()
         "varNN_cutoff: CC 20 opens the filter");
 }
 
+// envelope level (0..1) at `t` seconds, relative to the full level at `ref` seconds
+float levelAt(const Render& r, float t, float ref)
+{
+    const size_t win = size_t(0.004f * kRate);
+    auto at = [&](float sec) { size_t i = size_t(sec * kRate); return r.rmsL(i - win / 2, i + win / 2); };
+    return at(t) / at(ref);
+}
+
+void envelopeShapes()
+{
+    auto attackAt = [](const char* shape) {
+        Synth s(std::string("<region> sample=*sine ampeg_attack=0.4 ") + shape);
+        return levelAt(s.play(60, 0.6f), 0.1f, 0.5f);
+    };
+    check(Synth("<region> sample=*sine ampeg_attack_shape=3").knows("ampeg_attack_shape"), "ampeg_attack_shape recognised");
+    float lin = attackAt(""), zero = attackAt("ampeg_attack_shape=0"), slow = attackAt("ampeg_attack_shape=5"), fast = attackAt("ampeg_attack_shape=-5");
+    check(std::fabs(lin - 0.25f) < 0.03f && std::fabs(zero - 0.25f) < 0.03f, "ampeg_attack_shape=0 is linear, like no shape (" + std::to_string(zero) + ")");
+    check(slow < 0.04f, "ampeg_attack_shape=5 starts slowly (" + std::to_string(slow) + " at a quarter)");
+    check(std::fabs(fast - 0.72f) < 0.04f, "ampeg_attack_shape=-5 starts quickly (" + std::to_string(fast) + " at a quarter)");
+
+    Synth decay("<region> sample=*sine ampeg_decay=0.4 ampeg_sustain=0 ampeg_decay_shape=0");
+    check(decay.knows("ampeg_decay_shape"), "ampeg_decay_shape recognised");
+    float d = levelAt(decay.play(60, 0.5f), 0.1f, 0.003f);
+    check(std::fabs(d - 0.75f) < 0.04f, "ampeg_decay_shape=0 falls in a straight line (" + std::to_string(d) + " at a quarter)");
+
+    Synth release("<region> sample=*sine ampeg_release=0.4 ampeg_release_shape=0");
+    check(release.knows("ampeg_release_shape"), "ampeg_release_shape recognised");
+    float rl = levelAt(release.playReleased(60, 0.2f, 0.7f), 0.4f, 0.15f);
+    check(std::fabs(rl - 0.5f) < 0.05f, "ampeg_release_shape=0 releases in a straight line (" + std::to_string(rl) + " halfway)");
+    Synth released("<region> sample=*sine ampeg_release=0.4");
+    float def = levelAt(released.playReleased(60, 0.2f, 0.7f), 0.4f, 0.15f);
+    check(def < 0.1f, "no ampeg_release_shape keeps sfizz's exponential release (" + std::to_string(def) + " halfway)");
+
+    // a second note in the group mutes the first with a 0.4 s linear fade; key 72 is silent here
+    Synth off("<region> key=60 sample=*sine group=1 off_by=1 off_mode=time off_time=0.4 off_shape=0 "
+              "<region> key=72 sample=*sine group=1 amplitude=0");
+    check(off.knows("off_shape"), "off_shape recognised");
+    float o = levelAt(off.playReleased(60, 2.0f, 0.8f, 72, 0.2f), 0.4f, 0.15f);
+    check(std::fabs(o - 0.5f) < 0.06f, "off_shape=0 mutes in a straight line (" + std::to_string(o) + " halfway)");
+    Synth offExp("<region> key=60 sample=*sine group=1 off_by=1 off_mode=time off_time=0.4 "
+                 "<region> key=72 sample=*sine group=1 amplitude=0");
+    float e = levelAt(offExp.playReleased(60, 2.0f, 0.8f, 72, 0.2f), 0.4f, 0.15f);
+    check(e < 0.1f, "without off_shape the mute stays exponential (" + std::to_string(e) + " halfway)");
+}
+
 // LFO 1 wobbles the volume by up to 12 dB; LFO 2 (constant 1: a sine stopped at its peak) drives it
 const char* kWobble = "<region> sample=*sine lfo01_wave=1 lfo01_volume=12 lfo02_wave=1 lfo02_freq=0 lfo02_phase=0.25 ";
 
@@ -269,6 +335,7 @@ int main()
     offsetCurveCc();
     delayCurveCc();
     variables();
+    envelopeShapes();
     std::printf("%s\n", failures ? "FAILED" : "all passed");
     return failures ? 1 : 0;
 }

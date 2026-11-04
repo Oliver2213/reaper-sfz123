@@ -26,21 +26,25 @@ set(SFIZZ_DEMOS OFF CACHE BOOL "" FORCE)
 set(SFIZZ_DEVTOOLS OFF CACHE BOOL "" FORCE)
 set(SFIZZ_BENCHMARKS OFF CACHE BOOL "" FORCE)
 set(ENABLE_LTO OFF CACHE BOOL "" FORCE)
-# sfizz is archived upstream; our changes (mostly more opcodes) live in patches/sfizz.patch and
-# are applied to the submodule's working tree. Regenerate the patch with
+# sfizz is archived upstream; our changes (mostly more opcodes) live in patches/sfizz.patch, which
+# is applied when the submodule is clean. After editing sfizz, regenerate it with
 #   git -C third_party/sfizz diff > patches/sfizz.patch
 set(SFIZZ_PATCH ${CMAKE_CURRENT_SOURCE_DIR}/patches/sfizz.patch)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${SFIZZ_PATCH})
-execute_process(COMMAND git apply --reverse --check ${SFIZZ_PATCH}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sfizz RESULT_VARIABLE _sfizz_patched OUTPUT_QUIET ERROR_QUIET)
-if(NOT _sfizz_patched EQUAL 0)
-    execute_process(COMMAND git apply ${SFIZZ_PATCH}
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sfizz RESULT_VARIABLE _sfizz_apply)
+set(_sfizz_dir ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sfizz)
+execute_process(COMMAND git diff --quiet WORKING_DIRECTORY ${_sfizz_dir} RESULT_VARIABLE _sfizz_dirty)
+if(_sfizz_dirty EQUAL 0)
+    execute_process(COMMAND git apply ${SFIZZ_PATCH} WORKING_DIRECTORY ${_sfizz_dir} RESULT_VARIABLE _sfizz_apply)
     if(NOT _sfizz_apply EQUAL 0)
-        message(FATAL_ERROR "third_party/sfizz has changes that don't match patches/sfizz.patch. "
-            "Reset it (git -C third_party/sfizz checkout -- .) or regenerate the patch.")
+        message(FATAL_ERROR "patches/sfizz.patch doesn't apply to third_party/sfizz")
     endif()
     message(STATUS "Applied patches/sfizz.patch")
+else()
+    execute_process(COMMAND git apply --reverse --check ${SFIZZ_PATCH}
+        WORKING_DIRECTORY ${_sfizz_dir} RESULT_VARIABLE _sfizz_matches OUTPUT_QUIET ERROR_QUIET)
+    if(NOT _sfizz_matches EQUAL 0)
+        message(WARNING "third_party/sfizz has changes that aren't in patches/sfizz.patch; building them as they are")
+    endif()
 endif()
 
 # newer clang rejects a construct in sfizz's vendored atomic_queue header
