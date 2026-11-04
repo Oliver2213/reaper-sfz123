@@ -1,0 +1,150 @@
+diff --git a/src/sfizz/Defaults.cpp b/src/sfizz/Defaults.cpp
+index acd7746..498baa0 100644
+--- a/src/sfizz/Defaults.cpp
++++ b/src/sfizz/Defaults.cpp
+@@ -87,6 +87,7 @@ FloatSpec amplitude { 100.0f, {0.0f, 10000.0f}, kNormalizePercent|kPermissiveBou
+ FloatSpec amplitudeMod { 0.0f, {0.0f, 10000.0f}, kNormalizePercent|kPermissiveBounds };
+ FloatSpec pan { 0.0f, {-100.0f, 100.0f}, kNormalizePercent|kPermissiveBounds };
+ FloatSpec panMod { 0.0f, {-200.0f, 200.0f}, kNormalizePercent|kPermissiveBounds };
++FloatSpec panKeytrack { 0.0f, {-100.0f, 100.0f}, kNormalizePercent|kPermissiveBounds };
+ FloatSpec position { 0.0f, {-100.0f, 100.0f}, kNormalizePercent|kPermissiveBounds };
+ FloatSpec positionMod { 0.0f, {-200.0f, 200.0f}, kNormalizePercent|kPermissiveBounds };
+ FloatSpec width { 100.0f, {-100.0f, 100.0f}, kNormalizePercent|kPermissiveBounds };
+diff --git a/src/sfizz/Defaults.h b/src/sfizz/Defaults.h
+index b3fac82..583c8b5 100644
+--- a/src/sfizz/Defaults.h
++++ b/src/sfizz/Defaults.h
+@@ -244,6 +244,7 @@ namespace Default
+     extern const OpcodeSpec<float> amplitude;
+     extern const OpcodeSpec<float> amplitudeMod;
+     extern const OpcodeSpec<float> pan;
++    extern const OpcodeSpec<float> panKeytrack;
+     extern const OpcodeSpec<float> panMod;
+     extern const OpcodeSpec<float> position;
+     extern const OpcodeSpec<float> positionMod;
+diff --git a/src/sfizz/OpcodeCleanup.cpp b/src/sfizz/OpcodeCleanup.cpp
+index 6282c2d..f81f0cb 100644
+--- a/src/sfizz/OpcodeCleanup.cpp
++++ b/src/sfizz/OpcodeCleanup.cpp
+@@ -12,6 +12,7 @@
+ #include <absl/strings/string_view.h>
+ #include <absl/strings/str_cat.h>
+ #include <absl/strings/ascii.h>
++#include <absl/strings/match.h>
+ #include <string>
+ 
+ namespace sfz {
+@@ -2892,9 +2893,23 @@ end_control:
+     return opcode;
+ }
+ 
++// SFZ v1 spellings the rules above miss; kept out of them so the generated file needn't be rebuilt
++static std::string cleanUpV1Aliases(std::string opcode)
++{
++    for (absl::string_view prefix : { "fileg_depthcc", "pitcheg_depthcc" }) {
++        absl::string_view rest = absl::string_view(opcode).substr(std::min(opcode.size(), prefix.size()));
++        if (absl::StartsWith(opcode, prefix) && !rest.empty() && rest.find_first_not_of("0123456789") == rest.npos)
++            return absl::StrCat(prefix.substr(0, prefix.size() - 2), "_oncc", rest);
++    }
++    return opcode;
++}
++
+ Opcode Opcode::cleanUp(OpcodeScope scope) const
+ {
+-    return Opcode(cleanUpOpcodeName(name, scope), value);
++    std::string cleaned = cleanUpOpcodeName(name, scope);
++    if (scope == kOpcodeScopeRegion)
++        cleaned = cleanUpV1Aliases(std::move(cleaned));
++    return Opcode(cleaned, value);
+ }
+ 
+ } // namespace sfz
+diff --git a/src/sfizz/OpcodeCleanup.re b/src/sfizz/OpcodeCleanup.re
+index 27ea2e2..08dbfad 100644
+--- a/src/sfizz/OpcodeCleanup.re
++++ b/src/sfizz/OpcodeCleanup.re
+@@ -10,6 +10,7 @@
+ #include <absl/strings/string_view.h>
+ #include <absl/strings/str_cat.h>
+ #include <absl/strings/ascii.h>
++#include <absl/strings/match.h>
+ #include <string>
+ 
+ namespace sfz {
+@@ -250,9 +251,23 @@ end_control:
+     return opcode;
+ }
+ 
++// SFZ v1 spellings the rules above miss; kept out of them so the generated file needn't be rebuilt
++static std::string cleanUpV1Aliases(std::string opcode)
++{
++    for (absl::string_view prefix : { "fileg_depthcc", "pitcheg_depthcc" }) {
++        absl::string_view rest = absl::string_view(opcode).substr(std::min(opcode.size(), prefix.size()));
++        if (absl::StartsWith(opcode, prefix) && !rest.empty() && rest.find_first_not_of("0123456789") == rest.npos)
++            return absl::StrCat(prefix.substr(0, prefix.size() - 2), "_oncc", rest);
++    }
++    return opcode;
++}
++
+ Opcode Opcode::cleanUp(OpcodeScope scope) const
+ {
+-    return Opcode(cleanUpOpcodeName(name, scope), value);
++    std::string cleaned = cleanUpOpcodeName(name, scope);
++    if (scope == kOpcodeScopeRegion)
++        cleaned = cleanUpV1Aliases(std::move(cleaned));
++    return Opcode(cleaned, value);
+ }
+ 
+ } // namespace sfz
+diff --git a/src/sfizz/Region.cpp b/src/sfizz/Region.cpp
+index be799ae..0003f47 100644
+--- a/src/sfizz/Region.cpp
++++ b/src/sfizz/Region.cpp
+@@ -435,6 +435,12 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
+     case_any_ccN("pan"):
+         processGenericCc(opcode, Default::panMod, ModKey::createNXYZ(ModId::Pan, id));
+         break;
++    case hash("pan_keycenter"):
++        panKeycenter = opcode.read(Default::key);
++        break;
++    case hash("pan_keytrack"):
++        panKeytrack = opcode.read(Default::panKeytrack);
++        break;
+     case hash("position"):
+         position = opcode.read(Default::position);
+         break;
+diff --git a/src/sfizz/Region.h b/src/sfizz/Region.h
+index b882c44..694a385 100644
+--- a/src/sfizz/Region.h
++++ b/src/sfizz/Region.h
+@@ -320,6 +320,8 @@ struct Region {
+     float position { Default::position }; // position
+     uint8_t ampKeycenter { Default::key }; // amp_keycenter
+     float ampKeytrack { Default::ampKeytrack }; // amp_keytrack
++    uint8_t panKeycenter { Default::key }; // pan_keycenter
++    float panKeytrack { Default::panKeytrack }; // pan_keytrack
+     float ampVeltrack { Default::ampVeltrack }; // amp_veltrack
+     CCMap<ModifierCurvePair<float>> ampVeltrackCC { ModifierCurvePair<float>{ Default::ampVeltrackMod, Default::curveCC } };
+     std::vector<std::pair<uint8_t, float>> velocityPoints; // amp_velcurve_N
+diff --git a/src/sfizz/Voice.cpp b/src/sfizz/Voice.cpp
+index e5233aa..7c6d81e 100644
+--- a/src/sfizz/Voice.cpp
++++ b/src/sfizz/Voice.cpp
+@@ -974,7 +974,7 @@ void Voice::Impl::panStageMono(AudioSpan<float> buffer) noexcept
+     copy<float>(leftBuffer, rightBuffer);
+ 
+     // Apply panning
+-    fill(*modulationSpan, region_->pan);
++    fill(*modulationSpan, region_->pan + region_->panKeytrack * (static_cast<int>(triggerEvent_.number) - region_->panKeycenter));
+     if (float* mod = mm.getModulation(panTarget_)) {
+         for (size_t i = 0; i < numSamples; ++i)
+             (*modulationSpan)[i] += mod[i];
+@@ -1002,7 +1002,7 @@ void Voice::Impl::panStageStereo(AudioSpan<float> buffer) noexcept
+     ModMatrix& mm = resources_.getModMatrix();
+ 
+     // Apply panning
+-    fill(*modulationSpan, region_->pan);
++    fill(*modulationSpan, region_->pan + region_->panKeytrack * (static_cast<int>(triggerEvent_.number) - region_->panKeycenter));
+     if (float* mod = mm.getModulation(panTarget_)) {
+         for (size_t i = 0; i < numSamples; ++i)
+             (*modulationSpan)[i] += mod[i];

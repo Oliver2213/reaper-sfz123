@@ -26,6 +26,23 @@ set(SFIZZ_DEMOS OFF CACHE BOOL "" FORCE)
 set(SFIZZ_DEVTOOLS OFF CACHE BOOL "" FORCE)
 set(SFIZZ_BENCHMARKS OFF CACHE BOOL "" FORCE)
 set(ENABLE_LTO OFF CACHE BOOL "" FORCE)
+# sfizz is archived upstream; our changes (mostly more opcodes) live in patches/sfizz.patch and
+# are applied to the submodule's working tree. Regenerate the patch with
+#   git -C third_party/sfizz diff > patches/sfizz.patch
+set(SFIZZ_PATCH ${CMAKE_CURRENT_SOURCE_DIR}/patches/sfizz.patch)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${SFIZZ_PATCH})
+execute_process(COMMAND git apply --reverse --check ${SFIZZ_PATCH}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sfizz RESULT_VARIABLE _sfizz_patched OUTPUT_QUIET ERROR_QUIET)
+if(NOT _sfizz_patched EQUAL 0)
+    execute_process(COMMAND git apply ${SFIZZ_PATCH}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sfizz RESULT_VARIABLE _sfizz_apply)
+    if(NOT _sfizz_apply EQUAL 0)
+        message(FATAL_ERROR "third_party/sfizz has changes that don't match patches/sfizz.patch. "
+            "Reset it (git -C third_party/sfizz checkout -- .) or regenerate the patch.")
+    endif()
+    message(STATUS "Applied patches/sfizz.patch")
+endif()
+
 # newer clang rejects a construct in sfizz's vendored atomic_queue header
 set(_sfizz_saved_flags "${CMAKE_CXX_FLAGS}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-missing-template-arg-list-after-template-kw -w")
@@ -124,3 +141,7 @@ target_include_directories(sfz123_gui_test PRIVATE third_party/clap/include)
 target_link_libraries(sfz123_gui_test PRIVATE "-framework Cocoa")
 set_source_files_properties(tests/gui_test.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 add_dependencies(sfz123_gui_test sfz123)
+
+# SFZ opcodes added by patches/sfizz.patch
+add_executable(sfz123_opcode_test tests/opcode_test.cpp)
+target_link_libraries(sfz123_opcode_test PRIVATE sfizz::sfizz)

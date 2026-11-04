@@ -4,3 +4,5 @@
 [submodule "third_party/sfizz"]
 	path = third_party/sfizz
 	url = https://github.com/sfztools/sfizz.git
+	# patches/sfizz.patch is applied to the working tree
+	ignore = dirty

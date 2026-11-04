@@ -60,6 +60,7 @@ src/params.cpp      parameter definitions, formatting and parsing
 engine-sf2/         Rust: polyphonic multi-channel synth around sfl2, plus reverb and chorus
 vendor/sfl2/        SFLT's SoundFont engine (GPL-3.0)
 third_party/        CLAP SDK, sfizz
+patches/sfizz.patch our changes to sfizz, applied to the submodule when CMake configures
 ```
 
 Files load on a background thread. The new engine is handed to the audio thread lock-free, and the old one is freed on the main thread, so loading never glitches playback.
@@ -68,6 +69,10 @@ Changes made to the SFLT core (`vendor/sfl2`):
 - added the SoundFont 2.01 default modulators for channel pressure, CC91 (reverb) and CC93 (chorus)
 - made channel and poly pressure real modulation sources
 - made sample reads, and instrument and sample lookups, bounds-checked, so a damaged file cannot crash REAPER
+
+sfizz is archived upstream, so SFZ opcodes it lacks are added in `patches/sfizz.patch`:
+- `pan_keytrack`, `pan_keycenter`
+- `fileg_depthccN`, `pitcheg_depthccN` (SFZ v1 spellings of `_depth_onccN`)
 
 Additions around the core that SFLT didn't have: sustain and sostenuto pedals, per-channel GM programs, RPNs, a working reverb and chorus, and a sustained note that is struck again releasing its previous voice.
 
@@ -79,6 +84,9 @@ SF_TEST_FONT=/path/to/font.sf3 cargo test --release --manifest-path engine-sf2/C
 
 # the built plug-in in a headless CLAP host (writes a WAV)
 build/sfz123_test "build/sfz123.clap" /path/to/instrument.sfz /tmp/out.wav
+
+# SFZ opcodes added to sfizz
+build/sfz123_opcode_test
 
 # the editor: snapshot plus accessibility tree (optional tab index)
 build/sfz123_gui_test "build/sfz123.clap" /path/to/instrument.sf2 /tmp/gui.png 1
