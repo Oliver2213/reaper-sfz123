@@ -244,7 +244,7 @@ index 33a4d1f..927e1f2 100644
  };
  
 diff --git a/src/sfizz/Defaults.cpp b/src/sfizz/Defaults.cpp
-index acd7746..ba37505 100644
+index acd7746..fb51f76 100644
 --- a/src/sfizz/Defaults.cpp
 +++ b/src/sfizz/Defaults.cpp
 @@ -87,6 +87,7 @@ FloatSpec amplitude { 100.0f, {0.0f, 10000.0f}, kNormalizePercent|kPermissiveBou
@@ -255,7 +255,15 @@ index acd7746..ba37505 100644
  FloatSpec position { 0.0f, {-100.0f, 100.0f}, kNormalizePercent|kPermissiveBounds };
  FloatSpec positionMod { 0.0f, {-200.0f, 200.0f}, kNormalizePercent|kPermissiveBounds };
  FloatSpec width { 100.0f, {-100.0f, 100.0f}, kNormalizePercent|kPermissiveBounds };
-@@ -135,6 +136,10 @@ FloatSpec lfoBeats { 0.0f, {0.0f, 1000.0f}, kPermissiveBounds };
+@@ -122,6 +123,7 @@ FloatSpec pitchVeltrack { 0, {-12000, 12000}, kPermissiveBounds };
+ FloatSpec pitchVeltrackMod { 0.0f, {-12000, 12000}, kPermissiveBounds };
+ FloatSpec transpose { 0, {-127, 127}, kPermissiveBounds };
+ FloatSpec pitch { 0.0f, {-2400.0f, 2400.0f}, kPermissiveBounds };
++FloatSpec headerTune { 0.0f, {-9600.0f, 9600.0f}, kPermissiveBounds };
+ FloatSpec pitchMod { 0.0f, {-12000.0f, 12000.0f}, kPermissiveBounds };
+ FloatSpec bendUp { 200.0f, {-12000.0f, 12000.0f}, kPermissiveBounds };
+ FloatSpec bendDown { -200.0f, {-12000.0f, 12000.0f}, kPermissiveBounds };
+@@ -135,6 +137,10 @@ FloatSpec lfoBeats { 0.0f, {0.0f, 1000.0f}, kPermissiveBounds };
  FloatSpec lfoBeatsMod { 0.0f, {-1000.0f, 1000.0f}, kPermissiveBounds };
  FloatSpec lfoPhase { 0.0f, {0.0f, 1.0f}, kWrapPhase|kPermissiveBounds };
  FloatSpec lfoPhaseMod { 0.0f, {0.0f, 1.0f}, kPermissiveBounds };
@@ -267,7 +275,7 @@ index acd7746..ba37505 100644
  FloatSpec lfoDelayMod { 0.0f, {0.0f, 30.0f}, kPermissiveBounds };
  FloatSpec lfoFade { 0.0f, {0.0f, 30.0f}, kPermissiveBounds };
 diff --git a/src/sfizz/Defaults.h b/src/sfizz/Defaults.h
-index b3fac82..fa54999 100644
+index b3fac82..5089723 100644
 --- a/src/sfizz/Defaults.h
 +++ b/src/sfizz/Defaults.h
 @@ -244,6 +244,7 @@ namespace Default
@@ -278,7 +286,15 @@ index b3fac82..fa54999 100644
      extern const OpcodeSpec<float> panMod;
      extern const OpcodeSpec<float> position;
      extern const OpcodeSpec<float> positionMod;
-@@ -293,6 +294,10 @@ namespace Default
+@@ -280,6 +281,7 @@ namespace Default
+     extern const OpcodeSpec<float> pitchVeltrackMod;
+     extern const OpcodeSpec<float> transpose;
+     extern const OpcodeSpec<float> pitch;
++    extern const OpcodeSpec<float> headerTune;
+     extern const OpcodeSpec<float> pitchMod;
+     extern const OpcodeSpec<float> bendUp;
+     extern const OpcodeSpec<float> bendDown;
+@@ -293,6 +295,10 @@ namespace Default
      extern const OpcodeSpec<float> lfoBeatsMod;
      extern const OpcodeSpec<float> lfoPhase;
      extern const OpcodeSpec<float> lfoPhaseMod;
@@ -442,7 +458,7 @@ index 27ea2e2..08dbfad 100644
  
  } // namespace sfz
 diff --git a/src/sfizz/Region.cpp b/src/sfizz/Region.cpp
-index be799ae..e5da13b 100644
+index be799ae..0431fa2 100644
 --- a/src/sfizz/Region.cpp
 +++ b/src/sfizz/Region.cpp
 @@ -89,6 +89,11 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
@@ -559,7 +575,23 @@ index be799ae..e5da13b 100644
      case hash("position"):
          position = opcode.read(Default::position);
          break;
-@@ -1101,6 +1184,21 @@ bool sfz::Region::parseEGOpcode(const Opcode& opcode, EGDescription& eg)
+@@ -562,6 +645,15 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
+     case hash("group_volume"):
+         groupVolume = opcode.read(Default::volume);
+         break;
++    case hash("global_tune"):
++        globalTune = opcode.read(Default::headerTune);
++        break;
++    case hash("master_tune"):
++        masterTune = opcode.read(Default::headerTune);
++        break;
++    case hash("group_tune"):
++        groupTune = opcode.read(Default::headerTune);
++        break;
+ 
+     case hash("lotimer"):
+         timerRange.setStart(opcode.read(Default::loTimer));
+@@ -1101,6 +1193,21 @@ bool sfz::Region::parseEGOpcode(const Opcode& opcode, EGDescription& eg)
      case_any_eg("release"):
          eg.release = opcode.read(Default::egRelease);
          break;
@@ -581,7 +613,7 @@ index be799ae..e5da13b 100644
      case_any_eg("start"):
          eg.start = opcode.read(Default::egPercent);
          break;
-@@ -1243,23 +1341,44 @@ bool sfz::Region::parseEGOpcode(const Opcode& opcode, absl::optional<EGDescripti
+@@ -1243,23 +1350,44 @@ bool sfz::Region::parseEGOpcode(const Opcode& opcode, absl::optional<EGDescripti
      return parsed;
  }
  
@@ -634,7 +666,7 @@ index be799ae..e5da13b 100644
      //
      auto getOrCreateLFOStep = [&opcode, &lfo]() -> float* {
          const unsigned stepNumber1Based = opcode.parameters[1];
-@@ -1311,6 +1430,28 @@ bool sfz::Region::parseLFOOpcodeV2(const Opcode& opcode)
+@@ -1311,6 +1439,28 @@ bool sfz::Region::parseLFOOpcodeV2(const Opcode& opcode)
      case hash("lfo&_freq"):
          lfo.freq = opcode.read(Default::lfoFreq);
          break;
@@ -663,7 +695,7 @@ index be799ae..e5da13b 100644
      case_any_ccN("lfo&_freq"):
          processGenericCc(opcode, Default::lfoFreqMod, ModKey::createNXYZ(ModId::LFOFrequency, id, lfoNumber));
          break;
-@@ -1704,6 +1845,19 @@ bool sfz::Region::parseEGOpcodeV2(const Opcode& opcode)
+@@ -1704,6 +1854,19 @@ bool sfz::Region::parseEGOpcodeV2(const Opcode& opcode)
          EG_target_cc(ModKey::createNXYZ(ModId::LFOFrequency, id, opcode.parameters[1] - 1), Default::lfoFreqMod);
          break;
  
@@ -683,7 +715,7 @@ index be799ae..e5da13b 100644
  
      default:
          return false;
-@@ -1861,6 +2015,72 @@ sfz::Region::Connection* sfz::Region::getConnection(const ModKey& source, const
+@@ -1861,6 +2024,72 @@ sfz::Region::Connection* sfz::Region::getConnection(const ModKey& source, const
      return (it == connections.end()) ? nullptr : &*it;
  }
  
@@ -757,7 +789,7 @@ index be799ae..e5da13b 100644
  {
      if (Connection* c = getConnection(source, target))
 diff --git a/src/sfizz/Region.h b/src/sfizz/Region.h
-index b882c44..ca07934 100644
+index b882c44..223f152 100644
 --- a/src/sfizz/Region.h
 +++ b/src/sfizz/Region.h
 @@ -198,6 +198,12 @@ struct Region {
@@ -803,7 +835,17 @@ index b882c44..ca07934 100644
      float ampVeltrack { Default::ampVeltrack }; // amp_veltrack
      CCMap<ModifierCurvePair<float>> ampVeltrackCC { ModifierCurvePair<float>{ Default::ampVeltrackMod, Default::curveCC } };
      std::vector<std::pair<uint8_t, float>> velocityPoints; // amp_velcurve_N
-@@ -395,8 +407,24 @@ struct Region {
+@@ -344,6 +356,9 @@ struct Region {
+     float globalVolume { 0.0 }; // global_volume
+     float masterVolume { 0.0 }; // master_volume
+     float groupVolume { 0.0 }; // group_volume
++    float globalTune { 0.0 }; // global_tune, in cents
++    float masterTune { 0.0 }; // master_tune
++    float groupTune { 0.0 }; // group_tune
+ 
+     // Filters and EQs
+     std::vector<EQDescription> equalizers;
+@@ -395,8 +410,24 @@ struct Region {
          float velToDepth = 0.0f;
      };
      std::vector<Connection> connections;
@@ -829,7 +871,7 @@ index b882c44..ca07934 100644
  
      // Parent
 diff --git a/src/sfizz/RegionStateful.cpp b/src/sfizz/RegionStateful.cpp
-index 1a4e440..c8f450f 100644
+index 1a4e440..a457450 100644
 --- a/src/sfizz/RegionStateful.cpp
 +++ b/src/sfizz/RegionStateful.cpp
 @@ -22,22 +22,29 @@ float baseVolumedB(const Region& region, const MidiState& midiState, int noteNum
@@ -866,6 +908,14 @@ index 1a4e440..c8f450f 100644
  
      return Default::delay.bounds.clamp(finalDelay);
  }
+@@ -146,6 +153,7 @@ float basePitchVariation(const Region& region, float noteNumber, float velocity,
+     fast_real_distribution<float> pitchDistribution { 0.0f, region.pitchRandom };
+     float pitchVariationInCents = region.pitchKeytrack * (noteNumber - float(region.pitchKeycenter)); // note difference with pitch center
+     pitchVariationInCents += region.pitch; // sample tuning
++    pitchVariationInCents += region.globalTune + region.masterTune + region.groupTune;
+     pitchVariationInCents += config::centPerSemitone * region.transpose; // sample transpose
+ 
+     float veltrack = region.pitchVeltrack;
 diff --git a/src/sfizz/RegionStateful.h b/src/sfizz/RegionStateful.h
 index 8303126..aa57bc0 100644
 --- a/src/sfizz/RegionStateful.h

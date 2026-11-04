@@ -157,6 +157,25 @@ void phaseInvert()
     check(cancelled < 0.001f * sum, "phase=invert: an inverted copy cancels the original (" + std::to_string(db(cancelled, sum)) + " dB)");
 }
 
+// frequency of the rendered tone, from zero crossings
+float frequency(const Render& r)
+{
+    int crossings = 0;
+    for (size_t i = 1; i < r.left.size(); ++i)
+        crossings += (r.left[i - 1] < 0) != (r.left[i] < 0);
+    return crossings / 2.0f / (r.left.size() / kRate);
+}
+
+void headerTune()
+{
+    Synth plain("<region> sample=*sine");
+    Synth tuned("<global> global_tune=100 <master> master_tune=100 <group> group_tune=-1300 <region> sample=*sine");
+    check(tuned.knows("global_tune") && tuned.knows("master_tune") && tuned.knows("group_tune"), "global_tune, master_tune, group_tune recognised");
+    float f0 = frequency(plain.play(69, 1.0f)), f1 = frequency(tuned.play(69, 1.0f));
+    check(std::fabs(f0 - 440) < 2 && std::fabs(f1 - 440 * std::pow(2.0f, -1100 / 1200.0f)) < 2,
+        "header tuning adds up: +100 +100 -1300 cents (" + std::to_string(f0) + " Hz to " + std::to_string(f1) + " Hz)");
+}
+
 void filegDepthCc()
 {
     Synth s("<region> sample=*saw cutoff=200 fileg_attack=0 fileg_sustain=100 fileg_depthcc20=4800");
@@ -391,6 +410,7 @@ int main()
     panKeytrack();
     filegDepthCc();
     phaseInvert();
+    headerTune();
     lfoFreqLfo();
     lfoDepthLfo();
     lfoFeedback();
