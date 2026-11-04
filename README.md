@@ -72,6 +72,7 @@ Changes made to the SFLT core (`vendor/sfl2`):
 
 sfizz is archived upstream, so SFZ opcodes it lacks are added in `patches/sfizz.patch`:
 - `pan_keytrack`, `pan_keycenter`
+- `phase=invert` (SFZ v2), which flips a region's polarity, as in DrumGizmo's snare bottom mics
 - `fileg_depthccN`, `pitcheg_depthccN` (SFZ v1 spellings of `_depth_onccN`)
 - `lfoN_freq_lfoX`, `lfoN_depth_lfoX` and `egN_depth_lfoX`, with `_onccY` variants: one LFO or EG changing another LFO's rate (in Hz) or scaling its output (in %). Feedback loops (LFOs modulating each other, or themselves) work as in ARIA, with a delay of one processing block
 - `offset_curveccN`, `delay_curveccN`: curves for the CCs that move the sample start and the delay

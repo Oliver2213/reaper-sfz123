@@ -442,7 +442,7 @@ index 27ea2e2..08dbfad 100644
  
  } // namespace sfz
 diff --git a/src/sfizz/Region.cpp b/src/sfizz/Region.cpp
-index be799ae..bdfa196 100644
+index be799ae..e5da13b 100644
 --- a/src/sfizz/Region.cpp
 +++ b/src/sfizz/Region.cpp
 @@ -89,6 +89,11 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
@@ -479,7 +479,7 @@ index be799ae..bdfa196 100644
      case hash("polyphony"):
          polyphony = opcode.read(Default::polyphony);
          break;
-@@ -432,9 +445,76 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
+@@ -432,9 +445,79 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
      case hash("pan"):
          pan = opcode.read(Default::pan);
          break;
@@ -547,6 +547,9 @@ index be799ae..bdfa196 100644
      case_any_ccN("pan"):
          processGenericCc(opcode, Default::panMod, ModKey::createNXYZ(ModId::Pan, id));
          break;
++    case hash("phase"):
++        invertPhase = opcode.value == "invert";
++        break;
 +    case hash("pan_keycenter"):
 +        panKeycenter = opcode.read(Default::key);
 +        break;
@@ -556,7 +559,7 @@ index be799ae..bdfa196 100644
      case hash("position"):
          position = opcode.read(Default::position);
          break;
-@@ -1101,6 +1181,21 @@ bool sfz::Region::parseEGOpcode(const Opcode& opcode, EGDescription& eg)
+@@ -1101,6 +1184,21 @@ bool sfz::Region::parseEGOpcode(const Opcode& opcode, EGDescription& eg)
      case_any_eg("release"):
          eg.release = opcode.read(Default::egRelease);
          break;
@@ -578,7 +581,7 @@ index be799ae..bdfa196 100644
      case_any_eg("start"):
          eg.start = opcode.read(Default::egPercent);
          break;
-@@ -1243,23 +1338,44 @@ bool sfz::Region::parseEGOpcode(const Opcode& opcode, absl::optional<EGDescripti
+@@ -1243,23 +1341,44 @@ bool sfz::Region::parseEGOpcode(const Opcode& opcode, absl::optional<EGDescripti
      return parsed;
  }
  
@@ -631,7 +634,7 @@ index be799ae..bdfa196 100644
      //
      auto getOrCreateLFOStep = [&opcode, &lfo]() -> float* {
          const unsigned stepNumber1Based = opcode.parameters[1];
-@@ -1311,6 +1427,28 @@ bool sfz::Region::parseLFOOpcodeV2(const Opcode& opcode)
+@@ -1311,6 +1430,28 @@ bool sfz::Region::parseLFOOpcodeV2(const Opcode& opcode)
      case hash("lfo&_freq"):
          lfo.freq = opcode.read(Default::lfoFreq);
          break;
@@ -660,7 +663,7 @@ index be799ae..bdfa196 100644
      case_any_ccN("lfo&_freq"):
          processGenericCc(opcode, Default::lfoFreqMod, ModKey::createNXYZ(ModId::LFOFrequency, id, lfoNumber));
          break;
-@@ -1704,6 +1842,19 @@ bool sfz::Region::parseEGOpcodeV2(const Opcode& opcode)
+@@ -1704,6 +1845,19 @@ bool sfz::Region::parseEGOpcodeV2(const Opcode& opcode)
          EG_target_cc(ModKey::createNXYZ(ModId::LFOFrequency, id, opcode.parameters[1] - 1), Default::lfoFreqMod);
          break;
  
@@ -680,7 +683,7 @@ index be799ae..bdfa196 100644
  
      default:
          return false;
-@@ -1861,6 +2012,72 @@ sfz::Region::Connection* sfz::Region::getConnection(const ModKey& source, const
+@@ -1861,6 +2015,72 @@ sfz::Region::Connection* sfz::Region::getConnection(const ModKey& source, const
      return (it == connections.end()) ? nullptr : &*it;
  }
  
@@ -754,7 +757,7 @@ index be799ae..bdfa196 100644
  {
      if (Connection* c = getConnection(source, target))
 diff --git a/src/sfizz/Region.h b/src/sfizz/Region.h
-index b882c44..23950ee 100644
+index b882c44..ca07934 100644
 --- a/src/sfizz/Region.h
 +++ b/src/sfizz/Region.h
 @@ -198,6 +198,12 @@ struct Region {
@@ -790,16 +793,17 @@ index b882c44..23950ee 100644
      absl::optional<uint32_t> notePolyphony {}; // note_polyphony
      uint32_t polyphony { config::maxVoices }; // polyphony
      SelfMask selfMask { Default::selfMask };
-@@ -320,6 +329,8 @@ struct Region {
+@@ -320,6 +329,9 @@ struct Region {
      float position { Default::position }; // position
      uint8_t ampKeycenter { Default::key }; // amp_keycenter
      float ampKeytrack { Default::ampKeytrack }; // amp_keytrack
 +    uint8_t panKeycenter { Default::key }; // pan_keycenter
 +    float panKeytrack { Default::panKeytrack }; // pan_keytrack
++    bool invertPhase { false }; // phase=invert
      float ampVeltrack { Default::ampVeltrack }; // amp_veltrack
      CCMap<ModifierCurvePair<float>> ampVeltrackCC { ModifierCurvePair<float>{ Default::ampVeltrackMod, Default::curveCC } };
      std::vector<std::pair<uint8_t, float>> velocityPoints; // amp_velcurve_N
-@@ -395,8 +406,24 @@ struct Region {
+@@ -395,8 +407,24 @@ struct Region {
          float velToDepth = 0.0f;
      };
      std::vector<Connection> connections;
@@ -897,7 +901,7 @@ index c5e2bb3..b9f5f36 100644
      // Create the amplitude envelope
      if (!lastRegion->flexAmpEG)
 diff --git a/src/sfizz/Voice.cpp b/src/sfizz/Voice.cpp
-index e5233aa..241baf9 100644
+index e5233aa..7ecff7f 100644
 --- a/src/sfizz/Voice.cpp
 +++ b/src/sfizz/Voice.cpp
 @@ -435,7 +435,7 @@ bool Voice::startVoice(Layer* layer, int delay, const TriggerEvent& event) noexc
@@ -927,7 +931,25 @@ index e5233aa..241baf9 100644
          egAmplitude_.stopDynamicUpdates();
      }
      else {
-@@ -974,7 +976,7 @@ void Voice::Impl::panStageMono(AudioSpan<float> buffer) noexcept
+@@ -935,6 +937,8 @@ void Voice::Impl::ampStageMono(AudioSpan<float> buffer) noexcept
+ 
+     amplitudeEnvelope(*modulationSpan);
+     applyCrossfades(*modulationSpan);
++    if (region_->invertPhase)
++        applyGain1(-1.0f, *modulationSpan);
+     applyGain<float>(*modulationSpan, leftBuffer);
+ }
+ 
+@@ -951,6 +955,8 @@ void Voice::Impl::ampStageStereo(AudioSpan<float> buffer) noexcept
+ 
+     amplitudeEnvelope(*modulationSpan);
+     applyCrossfades(*modulationSpan);
++    if (region_->invertPhase)
++        applyGain1(-1.0f, *modulationSpan);
+     buffer.applyGain(*modulationSpan);
+ }
+ 
+@@ -974,7 +980,7 @@ void Voice::Impl::panStageMono(AudioSpan<float> buffer) noexcept
      copy<float>(leftBuffer, rightBuffer);
  
      // Apply panning
@@ -936,7 +958,7 @@ index e5233aa..241baf9 100644
      if (float* mod = mm.getModulation(panTarget_)) {
          for (size_t i = 0; i < numSamples; ++i)
              (*modulationSpan)[i] += mod[i];
-@@ -1002,7 +1004,7 @@ void Voice::Impl::panStageStereo(AudioSpan<float> buffer) noexcept
+@@ -1002,7 +1008,7 @@ void Voice::Impl::panStageStereo(AudioSpan<float> buffer) noexcept
      ModMatrix& mm = resources_.getModMatrix();
  
      // Apply panning

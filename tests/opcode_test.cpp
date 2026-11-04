@@ -136,6 +136,8 @@ struct Synth {
     }
 };
 
+float db(float a, float b) { return 20 * std::log10((a + 1e-9f) / (b + 1e-9f)); }
+
 void panKeytrack()
 {
     Synth s("<region> sample=*sine pan_keycenter=60 pan_keytrack=10");
@@ -144,6 +146,15 @@ void panKeytrack()
     check(std::fabs(center.rmsL() - center.rmsR()) < 0.01f * center.rmsL(), "pan_keytrack: key center plays in the middle");
     check(high.rmsR() > 10 * high.rmsL(), "pan_keytrack: 10 keys up is hard right");
     check(low.rmsL() > 10 * low.rmsR(), "pan_keytrack: 10 keys down is hard left");
+}
+
+void phaseInvert()
+{
+    Synth same("<region> sample=*sine <region> sample=*sine");
+    Synth opposite("<region> sample=*sine <region> sample=*sine phase=invert");
+    check(opposite.knows("phase"), "phase recognised");
+    float sum = same.play(60, 0.2f).rmsL(), cancelled = opposite.play(60, 0.2f).rmsL();
+    check(cancelled < 0.001f * sum, "phase=invert: an inverted copy cancels the original (" + std::to_string(db(cancelled, sum)) + " dB)");
 }
 
 void filegDepthCc()
@@ -200,8 +211,6 @@ void delayCurveCc()
     check(a > 8000 && a < 10000, "delay_onccN: linear CC delay (" + std::to_string(a) + " frames)");
     check(b < 100, "delay_curveccN: the curve maps CC 20 = 50 to no delay (" + std::to_string(b) + " frames)");
 }
-
-float db(float a, float b) { return 20 * std::log10((a + 1e-9f) / (b + 1e-9f)); }
 
 void variables()
 {
@@ -381,6 +390,7 @@ int main()
 {
     panKeytrack();
     filegDepthCc();
+    phaseInvert();
     lfoFreqLfo();
     lfoDepthLfo();
     lfoFeedback();
