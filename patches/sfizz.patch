@@ -1237,3 +1237,67 @@ index 31707b5..cdc0748 100644
                  source.bufferReady = true;
              }
  
+diff --git a/tests/RegionValueComputationsT.cpp b/tests/RegionValueComputationsT.cpp
+index 30eef25..6a87670 100644
+--- a/tests/RegionValueComputationsT.cpp
++++ b/tests/RegionValueComputationsT.cpp
+@@ -326,15 +326,16 @@ TEST_CASE("[Region] rt_decay")
+ TEST_CASE("[Region] Base delay")
+ {
+     MidiState midiState;
++    CurveSet curveSet { CurveSet::createPredefined() };
+     Region region { 0 };
+     region.parseOpcode({ "sample", "*sine" });
+     region.parseOpcode({ "delay", "10" });
+-    REQUIRE( regionDelay(region, midiState) == 10.0f );
++    REQUIRE( regionDelay(region, midiState, curveSet) == 10.0f );
+     region.parseOpcode({ "delay_random", "10" });
+     Random::randomGenerator.seed(42);
+     for (int i = 0; i < numRandomTests; ++i)
+     {
+-        auto delay = regionDelay(region, midiState);
++        auto delay = regionDelay(region, midiState, curveSet);
+         REQUIRE( (delay >= 10.0 && delay <= 20.0) );
+     }
+ }
+@@ -342,19 +343,35 @@ TEST_CASE("[Region] Base delay")
+ TEST_CASE("[Region] Offsets with CCs")
+ {
+     MidiState midiState;
++    CurveSet curveSet { CurveSet::createPredefined() };
+     Region region { 0 };
+ 
+     region.parseOpcode({ "offset_cc4", "255" });
+     region.parseOpcode({ "offset", "10" });
+-    REQUIRE( sampleOffset(region, midiState) == 10 );
++    REQUIRE( sampleOffset(region, midiState, curveSet) == 10 );
+     midiState.ccEvent(0, 4, 127_norm);
+-    REQUIRE( sampleOffset(region, midiState) == 265 );
++    REQUIRE( sampleOffset(region, midiState, curveSet) == 265 );
+     midiState.ccEvent(0, 4, 100_norm);
+-    REQUIRE( sampleOffset(region, midiState) == 210 );
++    REQUIRE( sampleOffset(region, midiState, curveSet) == 210 );
+     midiState.ccEvent(0, 4, 10_norm);
+-    REQUIRE( sampleOffset(region, midiState) == 30 );
++    REQUIRE( sampleOffset(region, midiState, curveSet) == 30 );
+     midiState.ccEvent(0, 4, 0);
+-    REQUIRE( sampleOffset(region, midiState) == 10 );
++    REQUIRE( sampleOffset(region, midiState, curveSet) == 10 );
++}
++
++TEST_CASE("[Region] Offsets with a CC curve")
++{
++    MidiState midiState;
++    CurveSet curveSet { CurveSet::createPredefined() };
++    Region region { 0 };
++
++    // predefined curve 4 is x^2
++    region.parseOpcode({ "offset_cc4", "1000" });
++    region.parseOpcode({ "offset_curvecc4", "4" });
++    midiState.ccEvent(0, 4, 0.5f);
++    REQUIRE( sampleOffset(region, midiState, curveSet) == 250 );
++    midiState.ccEvent(0, 4, 1.0f);
++    REQUIRE( sampleOffset(region, midiState, curveSet) == 1000 );
+ }
+ 
+ TEST_CASE("[Region] Pitch variation with veltrack")

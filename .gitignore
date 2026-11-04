@@ -3,3 +3,4 @@
 /engine-sf2/target/
 .DS_Store
 /.cache/
+/build-sfizz/

@@ -95,6 +95,13 @@ build/sfz123_test "build/sfz123.clap" /path/to/instrument.sfz /tmp/out.wav
 # SFZ opcodes added to sfizz
 build/sfz123_opcode_test
 
+# sfizz's own tests, with the patch (run from third_party/sfizz; 3 floating-point
+# checks also fail unpatched under -ffast-math)
+cmake -S third_party/sfizz -B build-sfizz -G Ninja -DSFIZZ_TESTS=ON -DSFIZZ_JACK=OFF \
+    -DCMAKE_CXX_FLAGS=-Wno-missing-template-arg-list-after-template-kw
+cmake --build build-sfizz --target sfizz_tests
+(cd third_party/sfizz && ../../build-sfizz/library/bin/sfizz_tests)
+
 # the editor: snapshot plus accessibility tree (optional tab index)
 build/sfz123_gui_test "build/sfz123.clap" /path/to/instrument.sf2 /tmp/gui.png 1
 ```
