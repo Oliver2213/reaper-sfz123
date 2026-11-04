@@ -39,7 +39,7 @@ std::string parentDir(const std::string& path)
 
 bool isOurs(const char* fxName)
 {
-    return std::strstr(fxName, "sfz123") || std::strstr(fxName, "SF Player"); // SF Player was its old name
+    return std::strstr(fxName, "sfz123") != nullptr;
 }
 
 std::vector<std::string> split(const std::string& path)

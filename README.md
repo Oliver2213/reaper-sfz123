@@ -15,7 +15,7 @@ scripts/build_and_install.sh            # Apple silicon
 scripts/build_and_install.sh universal  # Apple silicon and Intel
 ```
 
-Clone with submodules (`git clone --recursive`, or `git submodule update --init --recursive` afterwards). You need Xcode command line tools, CMake, Ninja and Rust. The script installs `sfz123.clap` into `~/Library/Audio/Plug-Ins/CLAP`. In REAPER, re-scan CLAP plug-ins (Preferences > Plug-ins > CLAP) or restart REAPER, then add **sfz123** to a track. The plug-in used to be called SF Player; projects that use it load unchanged.
+Clone with submodules (`git clone --recursive`, or `git submodule update --init --recursive` afterwards). You need Xcode command line tools, CMake, Ninja and Rust. The script installs `sfz123.clap` into `~/Library/Audio/Plug-Ins/CLAP`. In REAPER, re-scan CLAP plug-ins (Preferences > Plug-ins > CLAP) or restart REAPER, then add **sfz123** to a track.
 
 ## Using it
 

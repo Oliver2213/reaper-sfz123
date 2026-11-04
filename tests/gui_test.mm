@@ -75,7 +75,7 @@ int main(int argc, char** argv)
 
         auto* state = (const clap_plugin_state*)p->get_extension(p, CLAP_EXT_STATE);
         Stream st;
-        st.data = std::string("SFPLAYER 1\npath=") + argv[2] + "\n";
+        st.data = std::string("SFZ123 1\npath=") + argv[2] + "\n";
         clap_istream is { &st, sRead };
         state->load(p, &is);
 

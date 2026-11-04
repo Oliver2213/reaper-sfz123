@@ -247,7 +247,7 @@ int main(int argc, char** argv)
 
     // load the instrument via state, like REAPER restoring a project
     Stream st;
-    st.data = std::string("SFPLAYER 1\npath=") + argv[2] + "\n";
+    st.data = std::string("SFZ123 1\npath=") + argv[2] + "\n";
     if (const char* extra = getenv("SFP_STATE_EXTRA")) // e.g. "preset=0:3\np10=0\n"
         st.data += extra;
     clap_istream is { &st, sRead };

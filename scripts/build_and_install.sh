@@ -17,7 +17,7 @@ cmake --build build
 
 DEST="$HOME/Library/Audio/Plug-Ins/CLAP"
 mkdir -p "$DEST"
-rm -rf "$DEST/sfz123.clap" "$DEST/SF Player.clap" # SF Player was its old name
+rm -rf "$DEST/sfz123.clap"
 cp -R "build/sfz123.clap" "$DEST/"
 echo "Installed to $DEST/sfz123.clap"
 echo "In REAPER: Options > Preferences > Plug-ins > CLAP, then 'Re-scan' (or restart REAPER)."

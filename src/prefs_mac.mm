@@ -6,19 +6,12 @@
 
 namespace sfp {
 
-static NSString* const kSuite = @"com.oliver2213.sf-player";
+static NSString* const kSuite = @"dev.smoll.sfz123";
 static const NSUInteger kMaxRecent = 12;
 
 static NSUserDefaults* defaults()
 {
-    static NSUserDefaults* d = [] {
-        NSUserDefaults* d = [[NSUserDefaults alloc] initWithSuiteName:kSuite];
-        NSUserDefaults* old = [[NSUserDefaults alloc] initWithSuiteName:@"com.sfplayer.sf-player"];
-        for (NSString* key in @[ @"recentFiles", @"lastDirectory", @"selectedTab" ])
-            if (![d objectForKey:key] && [old objectForKey:key])
-                [d setObject:[old objectForKey:key] forKey:key];
-        return d;
-    }();
+    static NSUserDefaults* d = [[NSUserDefaults alloc] initWithSuiteName:kSuite];
     return d;
 }
 

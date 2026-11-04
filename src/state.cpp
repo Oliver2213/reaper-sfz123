@@ -21,7 +21,7 @@ bool Plugin::stateSave(const clap_ostream* stream, bool projectRelative)
 
     std::ostringstream os;
     os.precision(17);
-    os << "SFPLAYER 1\n";
+    os << "SFZ123 1\n";
     os << "path=" << path << "\n";
     if (!info_.presets.empty()) {
         size_t i = (size_t)std::clamp((long)param(kPreset), 0L, (long)info_.presets.size() - 1);
@@ -60,7 +60,7 @@ bool Plugin::stateLoad(const clap_istream* stream)
 
     std::istringstream is(s);
     std::string line;
-    if (!std::getline(is, line) || line.rfind("SFPLAYER", 0) != 0)
+    if (!std::getline(is, line) || line.rfind("SFZ123 ", 0) != 0)
         return false;
 
     std::string path;

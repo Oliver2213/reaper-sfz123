@@ -12,7 +12,7 @@ using namespace sfp;
 
 static const CGFloat kWidth = 740;
 static const CGFloat kHeight = 660;
-static NSString* const kDefaultsSuite = @"com.oliver2213.sf-player";
+static NSString* const kDefaultsSuite = @"dev.smoll.sfz123";
 
 static NSString* ns(const std::string& s)
 {

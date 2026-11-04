@@ -85,7 +85,7 @@ target_include_directories(sfz123 PRIVATE
     include
     third_party/clap/include
 )
-target_compile_definitions(sfz123 PRIVATE SFPLAYER_VERSION="${PROJECT_VERSION}")
+target_compile_definitions(sfz123 PRIVATE SFZ123_VERSION="${PROJECT_VERSION}")
 target_compile_options(sfz123 PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -fvisibility=hidden)
 set_source_files_properties(src/gui_mac.mm src/prefs_mac.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 
@@ -103,7 +103,7 @@ set_target_properties(sfz123 PROPERTIES
     BUNDLE_EXTENSION clap
     OUTPUT_NAME "sfz123"
     MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/resources/Info.plist.in
-    MACOSX_BUNDLE_GUI_IDENTIFIER com.oliver2213.sf-player
+    MACOSX_BUNDLE_GUI_IDENTIFIER dev.smoll.sfz123
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
     XCODE_ATTRIBUTE_GENERATE_PKGINFO_FILE YES
