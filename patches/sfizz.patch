@@ -1,5 +1,5 @@
 diff --git a/src/sfizz/Defaults.cpp b/src/sfizz/Defaults.cpp
-index acd7746..498baa0 100644
+index acd7746..d97d89d 100644
 --- a/src/sfizz/Defaults.cpp
 +++ b/src/sfizz/Defaults.cpp
 @@ -87,6 +87,7 @@ FloatSpec amplitude { 100.0f, {0.0f, 10000.0f}, kNormalizePercent|kPermissiveBou
@@ -10,8 +10,16 @@ index acd7746..498baa0 100644
  FloatSpec position { 0.0f, {-100.0f, 100.0f}, kNormalizePercent|kPermissiveBounds };
  FloatSpec positionMod { 0.0f, {-200.0f, 200.0f}, kNormalizePercent|kPermissiveBounds };
  FloatSpec width { 100.0f, {-100.0f, 100.0f}, kNormalizePercent|kPermissiveBounds };
+@@ -135,6 +136,7 @@ FloatSpec lfoBeats { 0.0f, {0.0f, 1000.0f}, kPermissiveBounds };
+ FloatSpec lfoBeatsMod { 0.0f, {-1000.0f, 1000.0f}, kPermissiveBounds };
+ FloatSpec lfoPhase { 0.0f, {0.0f, 1.0f}, kWrapPhase|kPermissiveBounds };
+ FloatSpec lfoPhaseMod { 0.0f, {0.0f, 1.0f}, kPermissiveBounds };
++FloatSpec lfoDepthMod { 0.0f, {-10000.0f, 10000.0f}, kNormalizePercent|kPermissiveBounds };
+ FloatSpec lfoDelay { 0.0f, {0.0f, 30.0f}, kPermissiveBounds };
+ FloatSpec lfoDelayMod { 0.0f, {0.0f, 30.0f}, kPermissiveBounds };
+ FloatSpec lfoFade { 0.0f, {0.0f, 30.0f}, kPermissiveBounds };
 diff --git a/src/sfizz/Defaults.h b/src/sfizz/Defaults.h
-index b3fac82..583c8b5 100644
+index b3fac82..2870097 100644
 --- a/src/sfizz/Defaults.h
 +++ b/src/sfizz/Defaults.h
 @@ -244,6 +244,7 @@ namespace Default
@@ -22,6 +30,64 @@ index b3fac82..583c8b5 100644
      extern const OpcodeSpec<float> panMod;
      extern const OpcodeSpec<float> position;
      extern const OpcodeSpec<float> positionMod;
+@@ -293,6 +294,7 @@ namespace Default
+     extern const OpcodeSpec<float> lfoBeatsMod;
+     extern const OpcodeSpec<float> lfoPhase;
+     extern const OpcodeSpec<float> lfoPhaseMod;
++    extern const OpcodeSpec<float> lfoDepthMod;
+     extern const OpcodeSpec<float> lfoDelay;
+     extern const OpcodeSpec<float> lfoDelayMod;
+     extern const OpcodeSpec<float> lfoFade;
+diff --git a/src/sfizz/LFO.cpp b/src/sfizz/LFO.cpp
+index 0564f2b..37f60ef 100644
+--- a/src/sfizz/LFO.cpp
++++ b/src/sfizz/LFO.cpp
+@@ -38,6 +38,7 @@ struct LFO::Impl {
+     ModMatrix::TargetId beatsKeyId;
+     ModMatrix::TargetId freqKeyId;
+     ModMatrix::TargetId phaseKeyId;
++    ModMatrix::TargetId depthKeyId;
+ 
+     // state
+     size_t delayFramesLeft_ = 0;
+@@ -70,6 +71,7 @@ void LFO::configure(const LFODescription* desc)
+     impl.beatsKeyId = modMatrix.findTarget(desc->beatsKey);
+     impl.freqKeyId = modMatrix.findTarget(desc->freqKey);
+     impl.phaseKeyId = modMatrix.findTarget(desc->phaseKey);
++    impl.depthKeyId = modMatrix.findTarget(desc->depthKey);
+ }
+ 
+ void LFO::start(unsigned triggerDelay)
+@@ -236,6 +238,7 @@ void LFO::process(absl::Span<float> out)
+     const LFODescription& desc = *impl.desc_;
+     BufferPool& pool = impl.resources_.getBufferPool();
+     size_t numFrames = out.size();
++    const absl::Span<float> block = out;
+ 
+     fill(out, 0.0f);
+ 
+@@ -301,6 +304,9 @@ void LFO::process(absl::Span<float> out)
+     }
+ 
+     processFadeIn(out);
++
++    if (const float* depth = impl.resources_.getModMatrix().getModulation(impl.depthKeyId))
++        applyGain<float>(absl::MakeConstSpan(depth, block.size()), block);
+ }
+ 
+ void LFO::processFadeIn(absl::Span<float> out)
+diff --git a/src/sfizz/LFODescription.h b/src/sfizz/LFODescription.h
+index 29c07a1..e478c57 100644
+--- a/src/sfizz/LFODescription.h
++++ b/src/sfizz/LFODescription.h
+@@ -42,6 +42,7 @@ struct LFODescription {
+     ModKey beatsKey;
+     ModKey freqKey;
+     ModKey phaseKey;
++    ModKey depthKey; // scales the whole output (lfoN_depth_lfoX, egN_depth_lfoX)
+ };
+ 
+ } // namespace sfz
 diff --git a/src/sfizz/OpcodeCleanup.cpp b/src/sfizz/OpcodeCleanup.cpp
 index 6282c2d..f81f0cb 100644
 --- a/src/sfizz/OpcodeCleanup.cpp
@@ -97,7 +163,7 @@ index 27ea2e2..08dbfad 100644
  
  } // namespace sfz
 diff --git a/src/sfizz/Region.cpp b/src/sfizz/Region.cpp
-index be799ae..0003f47 100644
+index be799ae..198e9c9 100644
 --- a/src/sfizz/Region.cpp
 +++ b/src/sfizz/Region.cpp
 @@ -435,6 +435,12 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
@@ -113,6 +179,108 @@ index be799ae..0003f47 100644
      case hash("position"):
          position = opcode.read(Default::position);
          break;
+@@ -1243,23 +1249,44 @@ bool sfz::Region::parseEGOpcode(const Opcode& opcode, absl::optional<EGDescripti
+     return parsed;
+ }
+ 
++// creates LFO `n1Based` if needed, e.g. as the target of another LFO or an EG, and sets its keys
++static absl::optional<unsigned> ensureLFO(std::vector<sfz::LFODescription>& lfos, NumericId<sfz::Region> id, unsigned n1Based)
++{
++    using namespace sfz;
++    if (n1Based <= 0 || !extendIfNecessary(lfos, n1Based, Default::numLFOs))
++        return absl::nullopt;
++    const unsigned n = n1Based - 1;
++    LFODescription& lfo = lfos[n];
++    lfo.beatsKey = ModKey::createNXYZ(ModId::LFOBeats, id, n);
++    lfo.freqKey = ModKey::createNXYZ(ModId::LFOFrequency, id, n);
++    lfo.phaseKey = ModKey::createNXYZ(ModId::LFOPhase, id, n);
++    lfo.depthKey = ModKey::createNXYZ(ModId::LFODepth, id, n);
++    return n;
++}
++
+ bool sfz::Region::parseLFOOpcodeV2(const Opcode& opcode)
+ {
+     const unsigned lfoNumber1Based = opcode.parameters.front();
+ 
+-    if (lfoNumber1Based <= 0)
+-        return false;
+-    if (!extendIfNecessary(lfos, lfoNumber1Based, Default::numLFOs))
++    // the target of lfoN_freq_lfoX or lfoN_depth_lfoX, created first so `lfo` stays valid
++    absl::optional<unsigned> targetLfo;
++    switch (opcode.lettersOnlyHash) {
++    case hash("lfo&_freq_lfo&"):
++    case_any_ccN("lfo&_freq_lfo&"):
++    case hash("lfo&_depth_lfo&"):
++    case_any_ccN("lfo&_depth_lfo&"):
++        targetLfo = ensureLFO(lfos, id, opcode.parameters[1]);
++        break;
++    default:
++        break;
++    }
++
++    if (!ensureLFO(lfos, id, lfoNumber1Based))
+         return false;
+ 
+     const unsigned lfoNumber = lfoNumber1Based - 1;
+     LFODescription& lfo = lfos[lfoNumber];
+ 
+-    //
+-    lfo.beatsKey = ModKey::createNXYZ(ModId::LFOBeats, id, lfoNumber);
+-    lfo.freqKey = ModKey::createNXYZ(ModId::LFOFrequency, id, lfoNumber);
+-    lfo.phaseKey = ModKey::createNXYZ(ModId::LFOPhase, id, lfoNumber);
+-
+     //
+     auto getOrCreateLFOStep = [&opcode, &lfo]() -> float* {
+         const unsigned stepNumber1Based = opcode.parameters[1];
+@@ -1311,6 +1338,28 @@ bool sfz::Region::parseLFOOpcodeV2(const Opcode& opcode)
+     case hash("lfo&_freq"):
+         lfo.freq = opcode.read(Default::lfoFreq);
+         break;
++
++    // one LFO modulating another: the frequency in Hz, or the depth (output scale) in %
++    case hash("lfo&_freq_lfo&"):
++        if (!targetLfo || *targetLfo == lfoNumber)
++            return false;
++        LFO_target(ModKey::createNXYZ(ModId::LFOFrequency, id, *targetLfo), Default::lfoFreqMod);
++        break;
++    case_any_ccN("lfo&_freq_lfo&"):
++        if (!targetLfo || *targetLfo == lfoNumber)
++            return false;
++        LFO_target_cc(ModKey::createNXYZ(ModId::LFOFrequency, id, *targetLfo), Default::lfoFreqMod);
++        break;
++    case hash("lfo&_depth_lfo&"):
++        if (!targetLfo || *targetLfo == lfoNumber)
++            return false;
++        LFO_target(ModKey::createNXYZ(ModId::LFODepth, id, *targetLfo), Default::lfoDepthMod);
++        break;
++    case_any_ccN("lfo&_depth_lfo&"):
++        if (!targetLfo || *targetLfo == lfoNumber)
++            return false;
++        LFO_target_cc(ModKey::createNXYZ(ModId::LFODepth, id, *targetLfo), Default::lfoDepthMod);
++        break;
+     case_any_ccN("lfo&_freq"):
+         processGenericCc(opcode, Default::lfoFreqMod, ModKey::createNXYZ(ModId::LFOFrequency, id, lfoNumber));
+         break;
+@@ -1704,6 +1753,19 @@ bool sfz::Region::parseEGOpcodeV2(const Opcode& opcode)
+         EG_target_cc(ModKey::createNXYZ(ModId::LFOFrequency, id, opcode.parameters[1] - 1), Default::lfoFreqMod);
+         break;
+ 
++    case hash("eg&_depth_lfo&"):
++        if (auto lfo = ensureLFO(lfos, id, opcode.parameters[1]))
++            EG_target(ModKey::createNXYZ(ModId::LFODepth, id, *lfo), Default::lfoDepthMod);
++        else
++            return false;
++        break;
++    case_any_ccN("eg&_depth_lfo&"):
++        if (auto lfo = ensureLFO(lfos, id, opcode.parameters[1]))
++            EG_target_cc(ModKey::createNXYZ(ModId::LFODepth, id, *lfo), Default::lfoDepthMod);
++        else
++            return false;
++        break;
++
+ 
+     default:
+         return false;
 diff --git a/src/sfizz/Region.h b/src/sfizz/Region.h
 index b882c44..694a385 100644
 --- a/src/sfizz/Region.h
@@ -148,3 +316,97 @@ index e5233aa..7c6d81e 100644
      if (float* mod = mm.getModulation(panTarget_)) {
          for (size_t i = 0; i < numSamples; ++i)
              (*modulationSpan)[i] += mod[i];
+diff --git a/src/sfizz/modulations/ModId.cpp b/src/sfizz/modulations/ModId.cpp
+index 29b563c..108e50f 100644
+--- a/src/sfizz/modulations/ModId.cpp
++++ b/src/sfizz/modulations/ModId.cpp
+@@ -102,6 +102,8 @@ int ModIds::flags(ModId id) noexcept
+         return kModIsPerVoice|kModIsAdditive;
+     case ModId::LFOPhase:
+         return kModIsPerVoice|kModIsAdditive;
++    case ModId::LFODepth:
++        return kModIsPerVoice|kModIsMultiplicative;
+     case ModId::LFOAmplitudeDepth:
+         return kModIsPerVoice|kModIsMultiplicative;
+     case ModId::LFOPanDepth:
+@@ -152,6 +154,12 @@ int ModIds::flags(ModId id) noexcept
+         return kModIsPerVoice|kModIsAdditive;
+     case ModId::EGLFOFreqDepth:
+         return kModIsPerVoice|kModIsAdditive;
++    case ModId::LFOLFOFreqDepth:
++        return kModIsPerVoice|kModIsAdditive;
++    case ModId::LFOLFODepthDepth:
++        return kModIsPerVoice|kModIsAdditive;
++    case ModId::EGLFODepthDepth:
++        return kModIsPerVoice|kModIsAdditive;
+ 
+         // unknown
+     default:
+diff --git a/src/sfizz/modulations/ModId.h b/src/sfizz/modulations/ModId.h
+index f7e6ed0..b4ea538 100644
+--- a/src/sfizz/modulations/ModId.h
++++ b/src/sfizz/modulations/ModId.h
+@@ -65,6 +65,7 @@ enum class ModId : int {
+     LFOFrequency,
+     LFOBeats,
+     LFOPhase,
++    LFODepth,
+     LFOAmplitudeDepth,
+     LFOPanDepth,
+     LFOWidthDepth,
+@@ -90,6 +91,9 @@ enum class ModId : int {
+     EGEqFrequencyDepth,
+     EGEqBandwidthDepth,
+     EGLFOFreqDepth,
++    LFOLFOFreqDepth,
++    LFOLFODepthDepth,
++    EGLFODepthDepth,
+ 
+     _TargetsEnd,
+     // [/targets] --------------------------------------------------------------
+diff --git a/src/sfizz/modulations/ModKey.cpp b/src/sfizz/modulations/ModKey.cpp
+index af38def..b1ea069 100644
+--- a/src/sfizz/modulations/ModKey.cpp
++++ b/src/sfizz/modulations/ModKey.cpp
+@@ -172,6 +172,8 @@ std::string ModKey::toString() const
+         return absl::StrCat("LFOBeats {", region_.number(), ", N=", 1 + params_.N, "}");
+     case ModId::LFOPhase:
+         return absl::StrCat("LFOPhase {", region_.number(), ", N=", 1 + params_.N, "}");
++    case ModId::LFODepth:
++        return absl::StrCat("LFODepth {", region_.number(), ", N=", 1 + params_.N, "}");
+     case ModId::LFOAmplitudeDepth:
+         return absl::StrCat("LFOAmplitudeDepth {", region_.number(), ", N=", 1 + params_.N, "}");
+     case ModId::LFOPanDepth:
+@@ -222,6 +224,12 @@ std::string ModKey::toString() const
+         return absl::StrCat("EGEqBandwidthDepth {", region_.number(), ", N=", 1 + params_.N, ", X=", 1 + params_.X, "}");
+     case ModId::EGLFOFreqDepth:
+         return absl::StrCat("EGLFOFreqDepth {", region_.number(), ", N=", 1 + params_.N, ", X=", 1 + params_.X, "}");
++    case ModId::LFOLFOFreqDepth:
++        return absl::StrCat("LFOLFOFreqDepth {", region_.number(), ", N=", 1 + params_.N, ", X=", 1 + params_.X, "}");
++    case ModId::LFOLFODepthDepth:
++        return absl::StrCat("LFOLFODepthDepth {", region_.number(), ", N=", 1 + params_.N, ", X=", 1 + params_.X, "}");
++    case ModId::EGLFODepthDepth:
++        return absl::StrCat("EGLFODepthDepth {", region_.number(), ", N=", 1 + params_.N, ", X=", 1 + params_.X, "}");
+ 
+     default:
+         return {};
+@@ -305,6 +313,10 @@ ModKey ModKey::getSourceDepthKey(const ModKey& source, const ModKey& target)
+             return ModKey::createNXYZ(ModId::LFOEqFrequencyDepth, region, tp.N, tp.X);
+         case ModId::EqBandwidth:
+             return ModKey::createNXYZ(ModId::LFOEqBandwidthDepth, region, tp.N, tp.X);
++        case ModId::LFOFrequency:
++            return ModKey::createNXYZ(ModId::LFOLFOFreqDepth, region, source.parameters().N, tp.N);
++        case ModId::LFODepth:
++            return ModKey::createNXYZ(ModId::LFOLFODepthDepth, region, source.parameters().N, tp.N);
+         default:
+             break;
+         }
+@@ -338,6 +350,8 @@ ModKey ModKey::getSourceDepthKey(const ModKey& source, const ModKey& target)
+             return ModKey::createNXYZ(ModId::EGEqBandwidthDepth, region, tp.N, tp.X);
+         case ModId:: LFOFrequency:
+             return ModKey::createNXYZ(ModId::EGLFOFreqDepth, region, tp.N, tp.X);
++        case ModId::LFODepth:
++            return ModKey::createNXYZ(ModId::EGLFODepthDepth, region, source.parameters().N, tp.N);
+         default:
+             break;
+         }
