@@ -1146,6 +1146,15 @@ void Plugin::updateFxName()
     if (current != want)
         reaper_.setFxRename(want);
     fxName_ = want;
+
+    // REAPER names a new instrument track after the plug-in; the track name is what OSARA reads
+    std::string track;
+    if (want.empty() || !reaper_.trackName(track))
+        return;
+    bool trackOurs = track.empty() || track == kDescriptor.name || track == trackName_ || (!current.empty() && track == current);
+    if (trackOurs && track != want)
+        reaper_.setTrackName(want);
+    trackName_ = want;
 }
 
 void Plugin::onTimer(clap_id id)

@@ -335,8 +335,8 @@ static NSTextField* makeWrappingText(NSString* label)
     _locationField.font = [NSFont systemFontOfSize:[NSFont smallSystemFontSize]];
     [root addArrangedSubview:_locationField];
 
-    _nameFxCheckbox = [NSButton checkboxWithTitle:@"Name the FX after the instrument" target:self action:@selector(nameFxToggled:)];
-    setAx(_nameFxCheckbox, nil, @"Shows the instrument, and the SoundFont preset, as this FX's name in REAPER's FX chain, mixer and track lists. A name you give the FX yourself is never replaced. Applies to every sfz123.");
+    _nameFxCheckbox = [NSButton checkboxWithTitle:@"Name the FX and track after the instrument" target:self action:@selector(nameFxToggled:)];
+    setAx(_nameFxCheckbox, nil, @"Shows the instrument, and the SoundFont preset, as the name of this FX and its track in REAPER, so the track list, mixer and FX chain say what is loaded. Names you type yourself are never replaced. The track is named only if it still has REAPER's automatic name and this is its first sfz123. Applies to every sfz123.");
     _nameFxCheckbox.state = nameFxAfterInstrument() ? NSControlStateValueOn : NSControlStateValueOff;
     _nameFxCheckbox.hidden = !_plugin->inReaper();
     [root addArrangedSubview:_nameFxCheckbox];

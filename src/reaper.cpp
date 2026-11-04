@@ -22,6 +22,7 @@ using GetContextFn = void* (*)(const clap_host* host, int sel);
 using ResolveFn = void (*)(const char* in, char* out, int outSize, const char* checkSubDir);
 using GetConfigFn = bool (*)(void* trackOrTake, int fx, const char* name, char* out, int outSize);
 using SetConfigFn = bool (*)(void* trackOrTake, int fx, const char* name, const char* value);
+using TrackStringFn = bool (*)(void* track, const char* name, char* value, bool set);
 
 constexpr int kContextTrack = 1;
 constexpr int kContextTake = 2;
@@ -34,6 +35,11 @@ std::string parentDir(const std::string& path)
 {
     auto slash = path.find_last_of('/');
     return slash == std::string::npos ? std::string() : path.substr(0, slash);
+}
+
+bool isOurs(const char* fxName)
+{
+    return std::strstr(fxName, "sfz123") || std::strstr(fxName, "SF Player"); // SF Player was its old name
 }
 
 std::vector<std::string> split(const std::string& path)
@@ -93,9 +99,43 @@ template <typename Fn> bool ReaperApi::withFx(const char* api, Fn fn) const
         return false;
     // the index may not address us (FX containers have their own chains), so check it is one of ours
     char name[512] = { 0 };
-    if (!get(owner, fx, "fx_name", name, sizeof(name)) || (!std::strstr(name, "sfz123") && !std::strstr(name, "SF Player")))
+    if (!get(owner, fx, "fx_name", name, sizeof(name)) || !isOurs(name))
         return false;
     return fn(f, owner, fx);
+}
+
+void* ReaperApi::firstTrackOfOurs() const
+{
+    void* track = context(kContextTrack);
+    auto get = getFunc_ ? reinterpret_cast<GetConfigFn>(getFunc_("TrackFX_GetNamedConfigParm")) : nullptr;
+    if (!track || !get)
+        return nullptr;
+    int fx = (int)(intptr_t)context(kContextFxIndex) - 1;
+    for (int i = 0; i < fx; ++i) {
+        char name[512] = { 0 };
+        if (get(track, i, "fx_name", name, sizeof(name)) && isOurs(name))
+            return nullptr;
+    }
+    return track;
+}
+
+bool ReaperApi::trackName(std::string& name) const
+{
+    void* track = firstTrackOfOurs();
+    auto fn = track ? reinterpret_cast<TrackStringFn>(getFunc_("GetSetMediaTrackInfo_String")) : nullptr;
+    char buf[1024] = { 0 };
+    if (!fn || !fn(track, "P_NAME", buf, false))
+        return false;
+    name = buf;
+    return true;
+}
+
+bool ReaperApi::setTrackName(const std::string& name)
+{
+    void* track = firstTrackOfOurs();
+    auto fn = track ? reinterpret_cast<TrackStringFn>(getFunc_("GetSetMediaTrackInfo_String")) : nullptr;
+    std::string value = name;
+    return fn && fn(track, "P_NAME", value.data(), true);
 }
 
 bool ReaperApi::fxRename(std::string& name) const

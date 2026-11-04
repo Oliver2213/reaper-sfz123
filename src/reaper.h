@@ -41,6 +41,11 @@ public:
     bool fxRename(std::string& name) const;
     bool setFxRename(const std::string& name);
 
+    // Name of the track this FX is on. Fails for take FX, and for any but the first sfz123 on
+    // the track, so two instances don't fight over the name.
+    bool trackName(std::string& name) const;
+    bool setTrackName(const std::string& name);
+
 private:
     struct Registered {
         ReaperApi* api;
@@ -52,6 +57,7 @@ private:
     void* context(int sel) const;
     // calls fn(TrackFX_/TakeFX_ named config function, track or take, fx index) for our FX
     template <typename Fn> bool withFx(const char* api, Fn fn) const;
+    void* firstTrackOfOurs() const;
     void unregisterAll();
 
     const clap_host* host_ = nullptr;
