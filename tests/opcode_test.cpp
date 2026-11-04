@@ -305,6 +305,21 @@ void lfoFreqLfo()
         "lfoN_freq_lfoX_onccY: CC 20 sets how much LFO 2 speeds up LFO 1");
 }
 
+void lfoFeedback()
+{
+    // processing an LFO twice per block would double its rate
+    Synth self(std::string(kWobble) + "lfo01_freq=8 lfo01_freq_lfo01=0");
+    check(self.knows("lfo01_freq_lfo01"), "an LFO modulating its own rate is recognised");
+    int w = self.play(60, 1.3f).wobbles();
+    check(w >= 12 && w <= 20, "an LFO in a feedback loop still runs once per block (" + std::to_string(w) + " crossings, 16 expected)");
+
+    // LFO 1 at 8 Hz and LFO 3 at 3 Hz modulate each other's rate a little
+    Synth loop("<region> sample=*sine lfo01_wave=1 lfo01_freq=8 lfo01_volume=12 lfo03_wave=1 lfo03_freq=3 "
+               "lfo01_freq_lfo03=0.5 lfo03_freq_lfo01=0.5");
+    int l = loop.play(60, 1.3f).wobbles();
+    check(loop.loaded && l >= 12 && l <= 20, "two LFOs modulating each other's rate stay near their own rates (" + std::to_string(l) + " crossings)");
+}
+
 void lfoDepthLfo()
 {
     Synth full(std::string(kWobble) + "lfo01_freq=8 lfo02_depth_lfo01=100");
@@ -331,6 +346,7 @@ int main()
     filegDepthCc();
     lfoFreqLfo();
     lfoDepthLfo();
+    lfoFeedback();
     egDepthLfo();
     offsetCurveCc();
     delayCurveCc();

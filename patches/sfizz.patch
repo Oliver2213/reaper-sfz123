@@ -274,7 +274,7 @@ index 16feb5c..5cbe904 100644
      float sustain { Default::egSustain };
      float depth { Default::egDepth };
 diff --git a/src/sfizz/LFO.cpp b/src/sfizz/LFO.cpp
-index 0564f2b..37f60ef 100644
+index 0564f2b..04d6666 100644
 --- a/src/sfizz/LFO.cpp
 +++ b/src/sfizz/LFO.cpp
 @@ -38,6 +38,7 @@ struct LFO::Impl {
@@ -293,20 +293,28 @@ index 0564f2b..37f60ef 100644
  }
  
  void LFO::start(unsigned triggerDelay)
-@@ -236,6 +238,7 @@ void LFO::process(absl::Span<float> out)
+@@ -236,6 +238,15 @@ void LFO::process(absl::Span<float> out)
      const LFODescription& desc = *impl.desc_;
      BufferPool& pool = impl.resources_.getBufferPool();
      size_t numFrames = out.size();
 +    const absl::Span<float> block = out;
++
++    // fetch modulations before clearing the output: in a feedback loop they read this LFO's
++    // previous block, which `out` still holds
++    ModMatrix& modMatrix = impl.resources_.getModMatrix();
++    modMatrix.getModulation(impl.beatsKeyId);
++    modMatrix.getModulation(impl.freqKeyId);
++    modMatrix.getModulation(impl.phaseKeyId);
++    const float* depth = modMatrix.getModulation(impl.depthKeyId);
  
      fill(out, 0.0f);
  
-@@ -301,6 +304,9 @@ void LFO::process(absl::Span<float> out)
+@@ -301,6 +312,9 @@ void LFO::process(absl::Span<float> out)
      }
  
      processFadeIn(out);
 +
-+    if (const float* depth = impl.resources_.getModMatrix().getModulation(impl.depthKeyId))
++    if (depth)
 +        applyGain<float>(absl::MakeConstSpan(depth, block.size()), block);
  }
  
@@ -398,7 +406,7 @@ index 27ea2e2..08dbfad 100644
  
  } // namespace sfz
 diff --git a/src/sfizz/Region.cpp b/src/sfizz/Region.cpp
-index be799ae..dda523e 100644
+index be799ae..f9af401 100644
 --- a/src/sfizz/Region.cpp
 +++ b/src/sfizz/Region.cpp
 @@ -89,6 +89,11 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
@@ -565,24 +573,24 @@ index be799ae..dda523e 100644
          lfo.freq = opcode.read(Default::lfoFreq);
          break;
 +
-+    // one LFO modulating another: the frequency in Hz, or the depth (output scale) in %
++    // one LFO modulating another, or itself: the frequency in Hz, or the depth (output scale) in %
 +    case hash("lfo&_freq_lfo&"):
-+        if (!targetLfo || *targetLfo == lfoNumber)
++        if (!targetLfo)
 +            return false;
 +        LFO_target(ModKey::createNXYZ(ModId::LFOFrequency, id, *targetLfo), Default::lfoFreqMod);
 +        break;
 +    case_any_ccN("lfo&_freq_lfo&"):
-+        if (!targetLfo || *targetLfo == lfoNumber)
++        if (!targetLfo)
 +            return false;
 +        LFO_target_cc(ModKey::createNXYZ(ModId::LFOFrequency, id, *targetLfo), Default::lfoFreqMod);
 +        break;
 +    case hash("lfo&_depth_lfo&"):
-+        if (!targetLfo || *targetLfo == lfoNumber)
++        if (!targetLfo)
 +            return false;
 +        LFO_target(ModKey::createNXYZ(ModId::LFODepth, id, *targetLfo), Default::lfoDepthMod);
 +        break;
 +    case_any_ccN("lfo&_depth_lfo&"):
-+        if (!targetLfo || *targetLfo == lfoNumber)
++        if (!targetLfo)
 +            return false;
 +        LFO_target_cc(ModKey::createNXYZ(ModId::LFODepth, id, *targetLfo), Default::lfoDepthMod);
 +        break;
@@ -973,3 +981,39 @@ index af38def..50580a9 100644
          default:
              break;
          }
+diff --git a/src/sfizz/modulations/ModMatrix.cpp b/src/sfizz/modulations/ModMatrix.cpp
+index 31707b5..cdc0748 100644
+--- a/src/sfizz/modulations/ModMatrix.cpp
++++ b/src/sfizz/modulations/ModMatrix.cpp
+@@ -34,6 +34,7 @@ struct ModMatrix::Impl {
+         ModKey key;
+         ModGenerator* gen {};
+         bool bufferReady {};
++        bool generating {}; // set while generating, to detect feedback loops
+         Buffer<float> buffer;
+     };
+ 
+@@ -140,6 +141,7 @@ ModMatrix::SourceId ModMatrix::registerSource(const ModKey& key, ModGenerator& g
+     source.gen = &gen;
+     source.bufferReady = false;
+     source.buffer.resize(impl.samplesPerBlock_);
++    std::fill(source.buffer.begin(), source.buffer.end(), 0.0f);
+ 
+     impl.sourceIndex_[key] = id.number();
+     if (key.region().number() > impl.maxRegionIdx_)
+@@ -428,9 +430,13 @@ float* ModMatrix::getModulation(TargetId targetId)
+         if (useThisSource) {
+             absl::Span<float> sourceBuffer(source.buffer.data(), numFrames);
+ 
+-            // unless source is already done, process it
+-            if (!source.bufferReady) {
++            // unless source is already done, process it. A source reached again while it is
++            // generating is in a feedback loop (e.g. two LFOs modulating each other's rate):
++            // that path reads the source's previous block instead.
++            if (!source.bufferReady && !source.generating) {
++                source.generating = true;
+                 source.gen->generate(source.key, impl.currentVoiceId_, sourceBuffer);
++                source.generating = false;
+                 source.bufferReady = true;
+             }
+ 

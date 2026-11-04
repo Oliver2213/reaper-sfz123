@@ -73,7 +73,7 @@ Changes made to the SFLT core (`vendor/sfl2`):
 sfizz is archived upstream, so SFZ opcodes it lacks are added in `patches/sfizz.patch`:
 - `pan_keytrack`, `pan_keycenter`
 - `fileg_depthccN`, `pitcheg_depthccN` (SFZ v1 spellings of `_depth_onccN`)
-- `lfoN_freq_lfoX`, `lfoN_depth_lfoX` and `egN_depth_lfoX`, with `_onccY` variants: one LFO or EG changing another LFO's rate (in Hz) or scaling its output (in %)
+- `lfoN_freq_lfoX`, `lfoN_depth_lfoX` and `egN_depth_lfoX`, with `_onccY` variants: one LFO or EG changing another LFO's rate (in Hz) or scaling its output (in %). Feedback loops (LFOs modulating each other, or themselves) work as in ARIA, with a delay of one processing block
 - `offset_curveccN`, `delay_curveccN`: curves for the CCs that move the sample start and the delay
 - ARIA variables: `varNN_mod`, `varNN_onccX`, `varNN_curveccX`, and `varNN_` followed by `cutoff`, `resonance`, `pitch`, `volume`, `amplitude`, `pan`, `width` or `position`. With `varNN_mod=mult` the CC terms multiply, so `var01_cutoff=6000 var01_mod=mult var01_oncc131=1 var01_oncc92=1` adds up to 6000 cents scaled by velocity times CC 92
 - `ampeg_`, `fileg_` and `pitcheg_` `attack_shape`, `decay_shape` and `release_shape`, and `off_shape`: curved envelope segments (0 is a straight line, positive starts slowly, negative quickly). Without them envelopes behave as before
@@ -100,7 +100,7 @@ build/sfz123_gui_test "build/sfz123.clap" /path/to/instrument.sf2 /tmp/gui.png 1
 
 - An SFZ instrument is rebuilt when its polyphony changes, because sfizz can't change its voice count while running.
 - The SoundFont envelope, filter, vibrato and effect settings don't apply to SFZ instruments. SFZ files define their own.
-- A few SFZ opcodes are still unsupported, such as an LFO modulating its own rate and CC numbers above 511. The status line lists any that were skipped.
+- A few SFZ opcodes are still unsupported, such as CC numbers above 511. The status line lists any that were skipped.
 - macOS only (the editor is AppKit).
 
 ## Credits and license
