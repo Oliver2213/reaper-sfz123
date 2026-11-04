@@ -180,6 +180,47 @@ void delayCurveCc()
     check(b < 100, "delay_curveccN: the curve maps CC 20 = 50 to no delay (" + std::to_string(b) + " frames)");
 }
 
+float db(float a, float b) { return 20 * std::log10((a + 1e-9f) / (b + 1e-9f)); }
+
+void variables()
+{
+    const std::string sum = "<region> sample=*sine var01_volume=-24 var01_oncc20=0.5 var01_oncc21=0.5";
+    Synth add(sum);
+    check(add.knows("var01_volume") && add.knows("var01_oncc20"), "varNN_target, varNN_onccX recognised");
+    float quiet = add.play(60, 0.2f, { { 20, 0 }, { 21, 0 } }).rmsL();
+    check(std::fabs(db(add.play(60, 0.2f, { { 20, 127 }, { 21, 0 } }).rmsL(), quiet) + 12) < 0.5f,
+        "varNN (add): one CC at full gives half the amount (-12 dB)");
+    check(std::fabs(db(add.play(60, 0.2f, { { 20, 127 }, { 21, 127 } }).rmsL(), quiet) + 24) < 0.5f,
+        "varNN (add): both CCs at full give the whole amount (-24 dB)");
+
+    Synth mult("<region> sample=*sine var01_mod=mult var01_volume=-24 var01_oncc20=1 var01_oncc21=1");
+    check(mult.knows("var01_mod"), "varNN_mod recognised");
+    float base = mult.play(60, 0.2f, { { 20, 0 }, { 21, 0 } }).rmsL();
+    check(std::fabs(db(mult.play(60, 0.2f, { { 20, 127 }, { 21, 0 } }).rmsL(), base)) < 0.5f,
+        "varNN (mult): nothing while the other CC is at 0");
+    check(std::fabs(db(mult.play(60, 0.2f, { { 20, 127 }, { 21, 64 } }).rmsL(), base) + 12) < 1.0f,
+        "varNN (mult): CC 20 full times CC 21 half is half the amount");
+    check(std::fabs(db(mult.play(60, 0.2f, { { 20, 127 }, { 21, 127 } }).rmsL(), base) + 24) < 0.5f,
+        "varNN (mult): both full give the whole amount");
+
+    Synth vel("<region> sample=*sine var01_mod=mult var01_volume=-24 var01_oncc131=1 var01_oncc20=1");
+    auto change = [&](int velocity) {
+        return db(vel.play(60, 0.2f, { { 20, 127 } }, velocity).rmsL(), vel.play(60, 0.2f, { { 20, 0 } }, velocity).rmsL());
+    };
+    check(std::fabs(change(127) + 24) < 0.5f, "varNN (mult) with CC 131: a full-velocity note gets the whole amount");
+    check(std::fabs(change(1)) < 0.5f, "varNN (mult) with CC 131: a velocity-1 note is barely changed");
+
+    Synth curved(std::string(kStepCurve) + "<region> sample=*sine var01_volume=-24 var01_oncc20=1 var01_curvecc20=9");
+    check(curved.knows("var01_curvecc20"), "varNN_curveccX recognised");
+    float c0 = curved.play(60, 0.2f, { { 20, 0 } }).rmsL();
+    check(std::fabs(db(curved.play(60, 0.2f, { { 20, 50 } }).rmsL(), c0)) < 0.5f && db(curved.play(60, 0.2f, { { 20, 100 } }).rmsL(), c0) < -23,
+        "varNN_curveccX: the step curve gates CC 20");
+
+    Synth cutoff("<region> sample=*saw cutoff=200 var01_cutoff=4800 var01_oncc20=1");
+    check(cutoff.play(60, 0.2f, { { 20, 127 } }).rmsL() > 1.5f * cutoff.play(60, 0.2f, { { 20, 0 } }).rmsL(),
+        "varNN_cutoff: CC 20 opens the filter");
+}
+
 // LFO 1 wobbles the volume by up to 12 dB; LFO 2 (constant 1: a sine stopped at its peak) drives it
 const char* kWobble = "<region> sample=*sine lfo01_wave=1 lfo01_volume=12 lfo02_wave=1 lfo02_freq=0 lfo02_phase=0.25 ";
 
@@ -227,6 +268,7 @@ int main()
     egDepthLfo();
     offsetCurveCc();
     delayCurveCc();
+    variables();
     std::printf("%s\n", failures ? "FAILED" : "all passed");
     return failures ? 1 : 0;
 }

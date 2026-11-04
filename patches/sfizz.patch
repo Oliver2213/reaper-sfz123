@@ -1,5 +1,5 @@
 diff --git a/src/sfizz/Defaults.cpp b/src/sfizz/Defaults.cpp
-index acd7746..d97d89d 100644
+index acd7746..17a36cd 100644
 --- a/src/sfizz/Defaults.cpp
 +++ b/src/sfizz/Defaults.cpp
 @@ -87,6 +87,7 @@ FloatSpec amplitude { 100.0f, {0.0f, 10000.0f}, kNormalizePercent|kPermissiveBou
@@ -10,16 +10,17 @@ index acd7746..d97d89d 100644
  FloatSpec position { 0.0f, {-100.0f, 100.0f}, kNormalizePercent|kPermissiveBounds };
  FloatSpec positionMod { 0.0f, {-200.0f, 200.0f}, kNormalizePercent|kPermissiveBounds };
  FloatSpec width { 100.0f, {-100.0f, 100.0f}, kNormalizePercent|kPermissiveBounds };
-@@ -135,6 +136,7 @@ FloatSpec lfoBeats { 0.0f, {0.0f, 1000.0f}, kPermissiveBounds };
+@@ -135,6 +136,8 @@ FloatSpec lfoBeats { 0.0f, {0.0f, 1000.0f}, kPermissiveBounds };
  FloatSpec lfoBeatsMod { 0.0f, {-1000.0f, 1000.0f}, kPermissiveBounds };
  FloatSpec lfoPhase { 0.0f, {0.0f, 1.0f}, kWrapPhase|kPermissiveBounds };
  FloatSpec lfoPhaseMod { 0.0f, {0.0f, 1.0f}, kPermissiveBounds };
++FloatSpec varDepth { 0.0f, {-100.0f, 100.0f}, kPermissiveBounds };
 +FloatSpec lfoDepthMod { 0.0f, {-10000.0f, 10000.0f}, kNormalizePercent|kPermissiveBounds };
  FloatSpec lfoDelay { 0.0f, {0.0f, 30.0f}, kPermissiveBounds };
  FloatSpec lfoDelayMod { 0.0f, {0.0f, 30.0f}, kPermissiveBounds };
  FloatSpec lfoFade { 0.0f, {0.0f, 30.0f}, kPermissiveBounds };
 diff --git a/src/sfizz/Defaults.h b/src/sfizz/Defaults.h
-index b3fac82..2870097 100644
+index b3fac82..e2ecfb5 100644
 --- a/src/sfizz/Defaults.h
 +++ b/src/sfizz/Defaults.h
 @@ -244,6 +244,7 @@ namespace Default
@@ -30,11 +31,12 @@ index b3fac82..2870097 100644
      extern const OpcodeSpec<float> panMod;
      extern const OpcodeSpec<float> position;
      extern const OpcodeSpec<float> positionMod;
-@@ -293,6 +294,7 @@ namespace Default
+@@ -293,6 +294,8 @@ namespace Default
      extern const OpcodeSpec<float> lfoBeatsMod;
      extern const OpcodeSpec<float> lfoPhase;
      extern const OpcodeSpec<float> lfoPhaseMod;
 +    extern const OpcodeSpec<float> lfoDepthMod;
++    extern const OpcodeSpec<float> varDepth;
      extern const OpcodeSpec<float> lfoDelay;
      extern const OpcodeSpec<float> lfoDelayMod;
      extern const OpcodeSpec<float> lfoFade;
@@ -163,7 +165,7 @@ index 27ea2e2..08dbfad 100644
  
  } // namespace sfz
 diff --git a/src/sfizz/Region.cpp b/src/sfizz/Region.cpp
-index be799ae..ee1bca4 100644
+index be799ae..764abf4 100644
 --- a/src/sfizz/Region.cpp
 +++ b/src/sfizz/Region.cpp
 @@ -89,6 +89,11 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
@@ -190,7 +192,50 @@ index be799ae..ee1bca4 100644
      case hash("end"):
          sampleEnd = opcode.read(Default::sampleEnd);
          break;
-@@ -435,6 +445,12 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
+@@ -432,9 +442,55 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
+     case hash("pan"):
+         pan = opcode.read(Default::pan);
+         break;
++
++    // ARIA variables
++    case hash("var&_mod"):
++        if (Variable* v = getOrCreateVariable(opcode.parameters.front()))
++            v->multiply = opcode.value == "mult";
++        else
++            return false;
++        break;
++    case hash("var&_oncc&"):
++    case hash("var&_curvecc&"):
++    {
++        Variable* v = getOrCreateVariable(opcode.parameters.front());
++        const unsigned cc = opcode.parameters.back();
++        if (!v || cc >= config::numCCs)
++            return false;
++        auto term = absl::c_find_if(v->terms, [cc](const Variable::Term& t) { return t.cc == cc; });
++        if (term == v->terms.end())
++            term = v->terms.insert(v->terms.end(), Variable::Term { static_cast<uint16_t>(cc) });
++        if (opcode.category == kOpcodeOnCcN)
++            term->depth = opcode.read(Default::varDepth);
++        else
++            term->curve = opcode.read(Default::curveCC);
++        break;
++    }
++    case hash("var&_cutoff"):
++        return addVariableTarget(opcode, ModKey::createNXYZ(ModId::FilCutoff, id, 0), Default::filterCutoffMod);
++    case hash("var&_resonance"):
++        return addVariableTarget(opcode, ModKey::createNXYZ(ModId::FilResonance, id, 0), Default::filterResonanceMod);
++    case hash("var&_pitch"):
++        return addVariableTarget(opcode, ModKey::createNXYZ(ModId::Pitch, id), Default::pitchMod);
++    case hash("var&_volume"):
++        return addVariableTarget(opcode, ModKey::createNXYZ(ModId::Volume, id), Default::volumeMod);
++    case hash("var&_amplitude"):
++        return addVariableTarget(opcode, ModKey::createNXYZ(ModId::Amplitude, id), Default::amplitudeMod);
++    case hash("var&_pan"):
++        return addVariableTarget(opcode, ModKey::createNXYZ(ModId::Pan, id), Default::panMod);
++    case hash("var&_width"):
++        return addVariableTarget(opcode, ModKey::createNXYZ(ModId::Width, id), Default::widthMod);
++    case hash("var&_position"):
++        return addVariableTarget(opcode, ModKey::createNXYZ(ModId::Position, id), Default::positionMod);
      case_any_ccN("pan"):
          processGenericCc(opcode, Default::panMod, ModKey::createNXYZ(ModId::Pan, id));
          break;
@@ -203,7 +248,7 @@ index be799ae..ee1bca4 100644
      case hash("position"):
          position = opcode.read(Default::position);
          break;
-@@ -1243,23 +1259,44 @@ bool sfz::Region::parseEGOpcode(const Opcode& opcode, absl::optional<EGDescripti
+@@ -1243,23 +1299,44 @@ bool sfz::Region::parseEGOpcode(const Opcode& opcode, absl::optional<EGDescripti
      return parsed;
  }
  
@@ -256,7 +301,7 @@ index be799ae..ee1bca4 100644
      //
      auto getOrCreateLFOStep = [&opcode, &lfo]() -> float* {
          const unsigned stepNumber1Based = opcode.parameters[1];
-@@ -1311,6 +1348,28 @@ bool sfz::Region::parseLFOOpcodeV2(const Opcode& opcode)
+@@ -1311,6 +1388,28 @@ bool sfz::Region::parseLFOOpcodeV2(const Opcode& opcode)
      case hash("lfo&_freq"):
          lfo.freq = opcode.read(Default::lfoFreq);
          break;
@@ -285,7 +330,7 @@ index be799ae..ee1bca4 100644
      case_any_ccN("lfo&_freq"):
          processGenericCc(opcode, Default::lfoFreqMod, ModKey::createNXYZ(ModId::LFOFrequency, id, lfoNumber));
          break;
-@@ -1704,6 +1763,19 @@ bool sfz::Region::parseEGOpcodeV2(const Opcode& opcode)
+@@ -1704,6 +1803,19 @@ bool sfz::Region::parseEGOpcodeV2(const Opcode& opcode)
          EG_target_cc(ModKey::createNXYZ(ModId::LFOFrequency, id, opcode.parameters[1] - 1), Default::lfoFreqMod);
          break;
  
@@ -305,11 +350,97 @@ index be799ae..ee1bca4 100644
  
      default:
          return false;
+@@ -1861,6 +1973,72 @@ sfz::Region::Connection* sfz::Region::getConnection(const ModKey& source, const
+     return (it == connections.end()) ? nullptr : &*it;
+ }
+ 
++sfz::Region::Variable* sfz::Region::getOrCreateVariable(unsigned number1Based)
++{
++    if (number1Based <= 0 || number1Based > 99)
++        return nullptr;
++    if (variables.size() < number1Based)
++        variables.resize(number1Based);
++    return &variables[number1Based - 1];
++}
++
++bool sfz::Region::addVariableTarget(const Opcode& opcode, const ModKey& target, OpcodeSpec<float> spec)
++{
++    Variable* v = getOrCreateVariable(opcode.parameters.front());
++    if (!v)
++        return false;
++    auto it = absl::c_find_if(v->targets, [&target](const std::pair<ModKey, float>& t) { return t.first == target; });
++    if (it == v->targets.end())
++        it = v->targets.insert(v->targets.end(), { target, 0.0f });
++    it->second = opcode.read(spec);
++    return true;
++}
++
++void sfz::Region::buildVariableConnections()
++{
++    auto ccKey = [this](const Variable::Term& t) {
++        ModKey::Parameters p;
++        p.cc = t.cc;
++        p.curve = t.curve;
++        return ccModulationIsPerVoice(t.cc) ? ModKey(ModId::PerVoiceController, id, p) : ModKey(ModId::Controller, {}, p);
++    };
++
++    for (size_t vi = 0; vi < variables.size(); ++vi) {
++        const Variable& v = variables[vi];
++        if (v.terms.empty())
++            continue;
++        for (size_t ti = 0; ti < v.targets.size(); ++ti) {
++            const ModKey& target = v.targets[ti].first;
++            const float amount = v.targets[ti].second;
++            const bool multiplicativeTarget = (target.flags() & kModIsMultiplicative) != 0;
++
++            if (!v.multiply || v.terms.size() == 1) {
++                // a sum of CC terms: one connection each
++                for (const auto& t : v.terms)
++                    getOrCreateConnection(ccKey(t), target).sourceDepth = amount * t.depth;
++                continue;
++            }
++
++            // a product of CC terms: chain them through depth modulations, so each CC scales the
++            // next; all the depths go into the innermost link
++            float depth = amount;
++            for (const auto& t : v.terms)
++                depth *= t.depth;
++            const size_t n = v.terms.size();
++            auto link = [&](size_t j) { return ModKey::createNXYZ(ModId::VariableDepth, id, vi, ti, j); };
++            getOrCreateConnection(ccKey(v.terms[n - 1]), link(n - 1)).sourceDepth = depth;
++            for (size_t j = n - 1; j-- > 1;) {
++                Connection& c = getOrCreateConnection(ccKey(v.terms[j]), link(j));
++                c.sourceDepth = 0.0f;
++                c.sourceDepthMod = link(j + 1);
++            }
++            Connection& c = getOrCreateConnection(ccKey(v.terms[0]), target);
++            c.sourceDepth = multiplicativeTarget ? 1.0f : 0.0f;
++            c.sourceDepthMod = link(1);
++        }
++    }
++}
++
+ sfz::Region::Connection& sfz::Region::getOrCreateConnection(const ModKey& source, const ModKey& target)
+ {
+     if (Connection* c = getConnection(source, target))
 diff --git a/src/sfizz/Region.h b/src/sfizz/Region.h
-index b882c44..5f4fa3f 100644
+index b882c44..7dcadb4 100644
 --- a/src/sfizz/Region.h
 +++ b/src/sfizz/Region.h
-@@ -238,9 +238,11 @@ struct Region {
+@@ -198,6 +198,12 @@ struct Region {
+ 
+     void offsetAllKeys(int offset) noexcept;
+ 
++    /**
++     * @brief Turn the ARIA varNN_* opcodes into modulation connections, once all
++     * of a region's opcodes are known.
++     */
++    void buildVariableConnections();
++
+     /**
+      * @brief Get the gain this region contributes into the input of the Nth
+      *        effect bus
+@@ -238,9 +244,11 @@ struct Region {
      float delay { Default::delay }; // delay
      float delayRandom { Default::delayRandom }; // delay_random
      CCMap<float> delayCC { Default::delayMod };
@@ -321,7 +452,7 @@ index b882c44..5f4fa3f 100644
      int64_t sampleEnd { Default::sampleEnd }; // end
      CCMap<int64_t> endCC { Default::sampleEndMod };
      absl::optional<uint32_t> sampleCount {}; // count
-@@ -320,6 +322,8 @@ struct Region {
+@@ -320,6 +328,8 @@ struct Region {
      float position { Default::position }; // position
      uint8_t ampKeycenter { Default::key }; // amp_keycenter
      float ampKeytrack { Default::ampKeytrack }; // amp_keytrack
@@ -330,6 +461,31 @@ index b882c44..5f4fa3f 100644
      float ampVeltrack { Default::ampVeltrack }; // amp_veltrack
      CCMap<ModifierCurvePair<float>> ampVeltrackCC { ModifierCurvePair<float>{ Default::ampVeltrackMod, Default::curveCC } };
      std::vector<std::pair<uint8_t, float>> velocityPoints; // amp_velcurve_N
+@@ -395,8 +405,24 @@ struct Region {
+         float velToDepth = 0.0f;
+     };
+     std::vector<Connection> connections;
++
++    // ARIA varNN_*: a value made from CCs (summed, or multiplied with varNN_mod=mult)
++    // that modulates other parameters, e.g. var01_cutoff=6000
++    struct Variable {
++        struct Term {
++            uint16_t cc;
++            float depth { 0.0f }; // varNN_onccX
++            uint8_t curve { 0 }; // varNN_curveccX
++        };
++        bool multiply { false };
++        std::vector<Term> terms;
++        std::vector<std::pair<ModKey, float>> targets;
++    };
++    std::vector<Variable> variables;
+     Connection* getConnection(const ModKey& source, const ModKey& target);
+     Connection& getOrCreateConnection(const ModKey& source, const ModKey& target);
++    Variable* getOrCreateVariable(unsigned number1Based);
++    bool addVariableTarget(const Opcode& opcode, const ModKey& target, OpcodeSpec<float> spec);
+     Connection* getConnectionFromCC(int sourceCC, const ModKey& target);
+ 
+     // Parent
 diff --git a/src/sfizz/RegionStateful.cpp b/src/sfizz/RegionStateful.cpp
 index 1a4e440..c8f450f 100644
 --- a/src/sfizz/RegionStateful.cpp
@@ -390,6 +546,18 @@ index 8303126..aa57bc0 100644
  /**
   * @brief Get the index of the sample end, either natural end or forced
   * loop.
+diff --git a/src/sfizz/Synth.cpp b/src/sfizz/Synth.cpp
+index c5e2bb3..b9f5f36 100644
+--- a/src/sfizz/Synth.cpp
++++ b/src/sfizz/Synth.cpp
+@@ -178,6 +178,7 @@ void Synth::Impl::buildRegion(const std::vector<Opcode>& regionOpcodes)
+     parseOpcodes(masterOpcodes_);
+     parseOpcodes(groupOpcodes_);
+     parseOpcodes(regionOpcodes);
++    lastRegion->buildVariableConnections();
+ 
+     // Create the amplitude envelope
+     if (!lastRegion->flexAmpEG)
 diff --git a/src/sfizz/Voice.cpp b/src/sfizz/Voice.cpp
 index e5233aa..1028633 100644
 --- a/src/sfizz/Voice.cpp
@@ -431,7 +599,7 @@ index e5233aa..1028633 100644
          for (size_t i = 0; i < numSamples; ++i)
              (*modulationSpan)[i] += mod[i];
 diff --git a/src/sfizz/modulations/ModId.cpp b/src/sfizz/modulations/ModId.cpp
-index 29b563c..108e50f 100644
+index 29b563c..2843725 100644
 --- a/src/sfizz/modulations/ModId.cpp
 +++ b/src/sfizz/modulations/ModId.cpp
 @@ -102,6 +102,8 @@ int ModIds::flags(ModId id) noexcept
@@ -443,7 +611,7 @@ index 29b563c..108e50f 100644
      case ModId::LFOAmplitudeDepth:
          return kModIsPerVoice|kModIsMultiplicative;
      case ModId::LFOPanDepth:
-@@ -152,6 +154,12 @@ int ModIds::flags(ModId id) noexcept
+@@ -152,6 +154,14 @@ int ModIds::flags(ModId id) noexcept
          return kModIsPerVoice|kModIsAdditive;
      case ModId::EGLFOFreqDepth:
          return kModIsPerVoice|kModIsAdditive;
@@ -453,11 +621,13 @@ index 29b563c..108e50f 100644
 +        return kModIsPerVoice|kModIsAdditive;
 +    case ModId::EGLFODepthDepth:
 +        return kModIsPerVoice|kModIsAdditive;
++    case ModId::VariableDepth:
++        return kModIsPerVoice|kModIsAdditive;
  
          // unknown
      default:
 diff --git a/src/sfizz/modulations/ModId.h b/src/sfizz/modulations/ModId.h
-index f7e6ed0..b4ea538 100644
+index f7e6ed0..2d70dee 100644
 --- a/src/sfizz/modulations/ModId.h
 +++ b/src/sfizz/modulations/ModId.h
 @@ -65,6 +65,7 @@ enum class ModId : int {
@@ -468,18 +638,19 @@ index f7e6ed0..b4ea538 100644
      LFOAmplitudeDepth,
      LFOPanDepth,
      LFOWidthDepth,
-@@ -90,6 +91,9 @@ enum class ModId : int {
+@@ -90,6 +91,10 @@ enum class ModId : int {
      EGEqFrequencyDepth,
      EGEqBandwidthDepth,
      EGLFOFreqDepth,
 +    LFOLFOFreqDepth,
 +    LFOLFODepthDepth,
 +    EGLFODepthDepth,
++    VariableDepth,
  
      _TargetsEnd,
      // [/targets] --------------------------------------------------------------
 diff --git a/src/sfizz/modulations/ModKey.cpp b/src/sfizz/modulations/ModKey.cpp
-index af38def..b1ea069 100644
+index af38def..50580a9 100644
 --- a/src/sfizz/modulations/ModKey.cpp
 +++ b/src/sfizz/modulations/ModKey.cpp
 @@ -172,6 +172,8 @@ std::string ModKey::toString() const
@@ -491,7 +662,7 @@ index af38def..b1ea069 100644
      case ModId::LFOAmplitudeDepth:
          return absl::StrCat("LFOAmplitudeDepth {", region_.number(), ", N=", 1 + params_.N, "}");
      case ModId::LFOPanDepth:
-@@ -222,6 +224,12 @@ std::string ModKey::toString() const
+@@ -222,6 +224,14 @@ std::string ModKey::toString() const
          return absl::StrCat("EGEqBandwidthDepth {", region_.number(), ", N=", 1 + params_.N, ", X=", 1 + params_.X, "}");
      case ModId::EGLFOFreqDepth:
          return absl::StrCat("EGLFOFreqDepth {", region_.number(), ", N=", 1 + params_.N, ", X=", 1 + params_.X, "}");
@@ -501,10 +672,12 @@ index af38def..b1ea069 100644
 +        return absl::StrCat("LFOLFODepthDepth {", region_.number(), ", N=", 1 + params_.N, ", X=", 1 + params_.X, "}");
 +    case ModId::EGLFODepthDepth:
 +        return absl::StrCat("EGLFODepthDepth {", region_.number(), ", N=", 1 + params_.N, ", X=", 1 + params_.X, "}");
++    case ModId::VariableDepth:
++        return absl::StrCat("VariableDepth {", region_.number(), ", var=", 1 + params_.N, ", target=", params_.X, ", term=", params_.Y, "}");
  
      default:
          return {};
-@@ -305,6 +313,10 @@ ModKey ModKey::getSourceDepthKey(const ModKey& source, const ModKey& target)
+@@ -305,6 +315,10 @@ ModKey ModKey::getSourceDepthKey(const ModKey& source, const ModKey& target)
              return ModKey::createNXYZ(ModId::LFOEqFrequencyDepth, region, tp.N, tp.X);
          case ModId::EqBandwidth:
              return ModKey::createNXYZ(ModId::LFOEqBandwidthDepth, region, tp.N, tp.X);
@@ -515,7 +688,7 @@ index af38def..b1ea069 100644
          default:
              break;
          }
-@@ -338,6 +350,8 @@ ModKey ModKey::getSourceDepthKey(const ModKey& source, const ModKey& target)
+@@ -338,6 +352,8 @@ ModKey ModKey::getSourceDepthKey(const ModKey& source, const ModKey& target)
              return ModKey::createNXYZ(ModId::EGEqBandwidthDepth, region, tp.N, tp.X);
          case ModId:: LFOFrequency:
              return ModKey::createNXYZ(ModId::EGLFOFreqDepth, region, tp.N, tp.X);
