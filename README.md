@@ -2,7 +2,7 @@
 
 An accessible SF2, SF3 and SFZ instrument player for REAPER on macOS, as a CLAP plugin.
 
-By Blake Oliver. Source: <https://github.com/Oliver2213/reaper-sfz123>
+By Blake Oliver, written with Claude Code (Claude Opus 5.5). Source: <https://github.com/Oliver2213/reaper-sfz123>
 
 - **SF2 / SF3** SoundFonts play through `sfl2`, the synthesis core from SFLT (vendored in `vendor/sfl2`).
 - **SFZ** instruments play through [sfizz](https://sfz.tools/sfizz/), which supports SFZ v2 and the ARIA extensions.
@@ -15,7 +15,7 @@ scripts/build_and_install.sh            # Apple silicon
 scripts/build_and_install.sh universal  # Apple silicon and Intel
 ```
 
-Clone with submodules (`git clone --recursive`, or `git submodule update --init --recursive` afterwards). You need Xcode command line tools, CMake, Ninja and Rust. The script installs `sfz123.clap` into `~/Library/Audio/Plug-Ins/CLAP`. In REAPER, re-scan CLAP plug-ins (Preferences > Plug-ins > CLAP) or restart REAPER, then add **sfz123** to a track.
+Clone with submodules (`git clone --recursive`, or `git submodule update --init --recursive` afterwards). You need Xcode command line tools, CMake, Ninja and Rust. A universal build needs a Rust that has both macOS targets; Homebrew's `rust` only builds for the Mac it runs on, so use rustup (`rustup target add x86_64-apple-darwin aarch64-apple-darwin`) with it first on `PATH`. The script installs `sfz123.clap` into `~/Library/Audio/Plug-Ins/CLAP`. In REAPER, re-scan CLAP plug-ins (Preferences > Plug-ins > CLAP) or restart REAPER, then add **sfz123** to a track.
 
 ## Using it
 
@@ -105,6 +105,10 @@ cmake --build build-sfizz --target sfizz_tests
 # the editor: snapshot plus accessibility tree (optional tab index)
 build/sfz123_gui_test "build/sfz123.clap" /path/to/instrument.sf2 /tmp/gui.png 1
 ```
+
+## Releases
+
+`scripts/release.sh` builds a universal plug-in (see the Rust note under Install), signs it with your Developer ID (hardened runtime), notarizes and staples it, and writes `dist/sfz123-<version>-mac.zip` with the license and this readme. The version comes from `project()` in `CMakeLists.txt`. Store notary credentials once with `xcrun notarytool store-credentials sfz123 --apple-id <email> --team-id <team>`. `SFZ123_SIGN_ID` and `SFZ123_NOTARY_PROFILE` override the identity and profile, and `SFZ123_SKIP_NOTARIZE=1` only signs.
 
 ## Known limitations
 

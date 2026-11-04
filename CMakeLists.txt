@@ -64,6 +64,13 @@ foreach(arch ${CMAKE_OSX_ARCHITECTURES})
     else()
         set(triple x86_64-apple-darwin)
     endif()
+    # whichever Rust is on PATH builds the engine; it needs the standard library for each arch
+    execute_process(COMMAND rustc --print target-libdir --target ${triple}
+        OUTPUT_VARIABLE _rust_libdir OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    if(NOT IS_DIRECTORY "${_rust_libdir}")
+        message(FATAL_ERROR "The Rust on PATH can't build for ${triple}. With rustup: "
+            "rustup target add ${triple}. Homebrew's rust only builds for this Mac's own architecture.")
+    endif()
     set(lib ${SF2ENGINE_TARGET_DIR}/${triple}/release/libsf2engine.a)
     add_custom_command(
         OUTPUT ${lib}

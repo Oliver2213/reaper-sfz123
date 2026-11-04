@@ -9,7 +9,6 @@ cd "$(dirname "$0")/.."
 ARCHS="arm64"
 if [[ "${1:-}" == "universal" ]]; then
     ARCHS="arm64;x86_64"
-    rustup target add x86_64-apple-darwin aarch64-apple-darwin >/dev/null 2>&1 || true
 fi
 
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_OSX_ARCHITECTURES=${ARCHS}"

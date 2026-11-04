@@ -1,5 +1,6 @@
 
-// `sfl2`, the sflt-rs soundfont engine
+// Modified for sfz123 by Claude Code (Claude Opus 5.5) for Blake Oliver, 2026-11-03 (from SFLT 0.9.0); the changes are listed in sfz123's README.
+// Modified for sfz123 since 2026 (from SFLT 0.9.0); the changes are listed in sfz123's README.
 //
 // this is a port of the original C++ implementation,
 // which is why you might find it to be more "C-like"
