@@ -8,7 +8,7 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif()
 
-project(sfz123 VERSION 1.0.0
+project(sfz123 VERSION 0.1.0
     DESCRIPTION "Accessible SF2, SF3 and SFZ player for REAPER"
     HOMEPAGE_URL "https://github.com/Oliver2213/reaper-sfz123"
     LANGUAGES C CXX OBJCXX)
