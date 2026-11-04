@@ -8,7 +8,7 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif()
 
-project(SFPlayer VERSION 1.0.0
+project(sfz123 VERSION 1.0.0
     DESCRIPTION "Accessible SF2, SF3 and SFZ player for REAPER"
     HOMEPAGE_URL "https://github.com/Oliver2213/reaper-sfz123"
     LANGUAGES C CXX OBJCXX)
@@ -66,7 +66,7 @@ add_custom_command(
 add_custom_target(sf2engine_build DEPENDS ${SF2ENGINE_LIB})
 
 # ---------------------------------------------------------------- plugin
-add_library(SFPlayer MODULE
+add_library(sfz123 MODULE
     src/entry.cpp
     src/plugin.cpp
     src/params.cpp
@@ -78,18 +78,18 @@ add_library(SFPlayer MODULE
     src/prefs_mac.mm
     src/gui_mac.mm
 )
-add_dependencies(SFPlayer sf2engine_build)
+add_dependencies(sfz123 sf2engine_build)
 
-target_include_directories(SFPlayer PRIVATE
+target_include_directories(sfz123 PRIVATE
     src
     include
     third_party/clap/include
 )
-target_compile_definitions(SFPlayer PRIVATE SFPLAYER_VERSION="${PROJECT_VERSION}")
-target_compile_options(SFPlayer PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -fvisibility=hidden)
+target_compile_definitions(sfz123 PRIVATE SFPLAYER_VERSION="${PROJECT_VERSION}")
+target_compile_options(sfz123 PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -fvisibility=hidden)
 set_source_files_properties(src/gui_mac.mm src/prefs_mac.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 
-target_link_libraries(SFPlayer PRIVATE
+target_link_libraries(sfz123 PRIVATE
     sfizz::sfizz
     ${SF2ENGINE_LIB}
     "-framework Cocoa"
@@ -98,10 +98,10 @@ target_link_libraries(SFPlayer PRIVATE
     "-framework Security"
 )
 
-set_target_properties(SFPlayer PROPERTIES
+set_target_properties(sfz123 PROPERTIES
     BUNDLE TRUE
     BUNDLE_EXTENSION clap
-    OUTPUT_NAME "SF Player"
+    OUTPUT_NAME "sfz123"
     MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/resources/Info.plist.in
     MACOSX_BUNDLE_GUI_IDENTIFIER com.oliver2213.sf-player
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
@@ -110,17 +110,17 @@ set_target_properties(SFPlayer PROPERTIES
 )
 
 # ad-hoc sign so macOS will load the bundle
-add_custom_command(TARGET SFPlayer POST_BUILD
-    COMMAND codesign --force --sign - --timestamp=none "$<TARGET_BUNDLE_DIR:SFPlayer>"
+add_custom_command(TARGET sfz123 POST_BUILD
+    COMMAND codesign --force --sign - --timestamp=none "$<TARGET_BUNDLE_DIR:sfz123>"
     VERBATIM)
 
 # ---------------------------------------------------------------- headless test host
-add_executable(sfplayer_test tests/host_test.cpp)
-target_include_directories(sfplayer_test PRIVATE third_party/clap/include)
-add_dependencies(sfplayer_test SFPlayer)
+add_executable(sfz123_test tests/host_test.cpp)
+target_include_directories(sfz123_test PRIVATE third_party/clap/include)
+add_dependencies(sfz123_test sfz123)
 
-add_executable(sfplayer_gui_test tests/gui_test.mm)
-target_include_directories(sfplayer_gui_test PRIVATE third_party/clap/include)
-target_link_libraries(sfplayer_gui_test PRIVATE "-framework Cocoa")
+add_executable(sfz123_gui_test tests/gui_test.mm)
+target_include_directories(sfz123_gui_test PRIVATE third_party/clap/include)
+target_link_libraries(sfz123_gui_test PRIVATE "-framework Cocoa")
 set_source_files_properties(tests/gui_test.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
-add_dependencies(sfplayer_gui_test SFPlayer)
+add_dependencies(sfz123_gui_test sfz123)

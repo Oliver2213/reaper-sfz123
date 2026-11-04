@@ -91,9 +91,9 @@ template <typename Fn> bool ReaperApi::withFx(const char* api, Fn fn) const
     void* f = getFunc_((prefix + api).c_str());
     if (!get || !f)
         return false;
-    // the index may not address us (FX containers have their own chains), so check it is an SF Player
+    // the index may not address us (FX containers have their own chains), so check it is one of ours
     char name[512] = { 0 };
-    if (!get(owner, fx, "fx_name", name, sizeof(name)) || !std::strstr(name, "SF Player"))
+    if (!get(owner, fx, "fx_name", name, sizeof(name)) || (!std::strstr(name, "sfz123") && !std::strstr(name, "SF Player")))
         return false;
     return fn(f, owner, fx);
 }
@@ -170,7 +170,7 @@ intptr_t ReaperApi::fileCallback(void* userdata, int msg, void* parm)
         return getContext ? (intptr_t)getContext(self->host_, kContextFxDsp) : 0;
     }
     case 0x103:
-        return (intptr_t) "SF Player";
+        return (intptr_t) "sfz123";
     default:
         return 0;
     }

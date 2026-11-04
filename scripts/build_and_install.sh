@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds SF Player and installs it to ~/Library/Audio/Plug-Ins/CLAP.
+# Builds sfz123 and installs it to ~/Library/Audio/Plug-Ins/CLAP.
 #   scripts/build_and_install.sh            # Apple silicon build
 #   scripts/build_and_install.sh universal  # Apple silicon + Intel
 set -euo pipefail
@@ -17,7 +17,7 @@ cmake --build build
 
 DEST="$HOME/Library/Audio/Plug-Ins/CLAP"
 mkdir -p "$DEST"
-rm -rf "$DEST/SF Player.clap"
-cp -R "build/SF Player.clap" "$DEST/"
-echo "Installed to $DEST/SF Player.clap"
+rm -rf "$DEST/sfz123.clap" "$DEST/SF Player.clap" # SF Player was its old name
+cp -R "build/sfz123.clap" "$DEST/"
+echo "Installed to $DEST/sfz123.clap"
 echo "In REAPER: Options > Preferences > Plug-ins > CLAP, then 'Re-scan' (or restart REAPER)."

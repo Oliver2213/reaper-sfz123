@@ -234,7 +234,7 @@ static void setAx(NSControl* c, NSString* label, NSString* help)
     _lastPercent = -1;
 
     self.wantsLayer = YES;
-    self.accessibilityLabel = @"SF Player";
+    self.accessibilityLabel = @"sfz123";
     self.accessibilityRole = NSAccessibilityGroupRole;
 
     [self buildInterface];
@@ -336,7 +336,7 @@ static NSTextField* makeWrappingText(NSString* label)
     [root addArrangedSubview:_locationField];
 
     _nameFxCheckbox = [NSButton checkboxWithTitle:@"Name the FX after the instrument" target:self action:@selector(nameFxToggled:)];
-    setAx(_nameFxCheckbox, nil, @"Shows the instrument, and the SoundFont preset, as this FX's name in REAPER's FX chain, mixer and track lists. A name you give the FX yourself is never replaced. Applies to every SF Player.");
+    setAx(_nameFxCheckbox, nil, @"Shows the instrument, and the SoundFont preset, as this FX's name in REAPER's FX chain, mixer and track lists. A name you give the FX yourself is never replaced. Applies to every sfz123.");
     _nameFxCheckbox.state = nameFxAfterInstrument() ? NSControlStateValueOn : NSControlStateValueOff;
     _nameFxCheckbox.hidden = !_plugin->inReaper();
     [root addArrangedSubview:_nameFxCheckbox];

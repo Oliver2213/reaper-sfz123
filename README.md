@@ -1,4 +1,4 @@
-# SF Player
+# sfz123
 
 An accessible SF2, SF3 and SFZ instrument player for REAPER on macOS, as a CLAP plugin.
 
@@ -15,7 +15,7 @@ scripts/build_and_install.sh            # Apple silicon
 scripts/build_and_install.sh universal  # Apple silicon and Intel
 ```
 
-Clone with submodules (`git clone --recursive`, or `git submodule update --init --recursive` afterwards). You need Xcode command line tools, CMake, Ninja and Rust. The script installs `SF Player.clap` into `~/Library/Audio/Plug-Ins/CLAP`. In REAPER, re-scan CLAP plug-ins (Preferences > Plug-ins > CLAP) or restart REAPER, then add **SF Player** to a track.
+Clone with submodules (`git clone --recursive`, or `git submodule update --init --recursive` afterwards). You need Xcode command line tools, CMake, Ninja and Rust. The script installs `sfz123.clap` into `~/Library/Audio/Plug-Ins/CLAP`. In REAPER, re-scan CLAP plug-ins (Preferences > Plug-ins > CLAP) or restart REAPER, then add **sfz123** to a track. The plug-in used to be called SF Player; projects that use it load unchanged.
 
 ## Using it
 
@@ -37,10 +37,10 @@ Each slider has a text field next to it. Type a value such as `-6`, `250 ms`, `1
 ### REAPER specifics
 
 - **Project recall**: the instrument and every setting are saved in the project. The instrument path is stored relative to the project folder, so a project folder can be moved or shared. If the file isn't at that relative path, REAPER's own media search (`resolve_fn2`) looks for it, the same way REAPER finds moved audio. The preset is saved by bank and program and instrument controls by CC number, so neither drifts if an instrument is edited. A file that can't be found is reported in the status line, and the saved path is kept.
-- **Project media**: SF Player tells REAPER which files the loaded instrument uses: the SoundFont, or the `.sfz` plus every sample and `#include`. *Save project as…* with *Copy all media into project directory* (or *Move*) then copies the instrument into the project, applying your REAPER media settings and exclusions. SoundFonts go in `SoundFonts/`, and SFZ instruments go in `SFZ/<instrument folder>/` with their folder layout intact, so they keep working. SF Player switches to the copy right away and the project stores the new relative path. These files also appear in the Project Bay, and *Clean current project directory* won't delete them. Only the instrument currently loaded counts, so files you previewed with Next File and moved past are not copied.
+- **Project media**: sfz123 tells REAPER which files the loaded instrument uses: the SoundFont, or the `.sfz` plus every sample and `#include`. *Save project as…* with *Copy all media into project directory* (or *Move*) then copies the instrument into the project, applying your REAPER media settings and exclusions. SoundFonts go in `SoundFonts/`, and SFZ instruments go in `SFZ/<instrument folder>/` with their folder layout intact, so they keep working. sfz123 switches to the copy right away and the project stores the new relative path. These files also appear in the Project Bay, and *Clean current project directory* won't delete them. Only the instrument currently loaded counts, so files you previewed with Next File and moved past are not copied.
 - **Where is my instrument?** Under the file path, the plug-in window says whether the instrument is stored in the project folder or outside it, and how to copy it in.
-- **REAPER presets, FX chains and track templates**: REAPER doesn't tell plug-ins when it is saving a preset rather than a project, so these store the instrument path relative to the project that was open when you saved them. Used in a project in another folder, that path usually points to the wrong place, and SF Player falls back to REAPER's media search, which only finds the file if it is in the project or one of REAPER's media folders. If the instrument isn't found, the status line says so; use Open or Recent to load it again. A project that has never been saved has no folder to be relative to, so anything saved from it stores an absolute path. Hosts that do report preset saves (CLAP's state-context extension) always get an absolute path.
-- **FX named after the instrument**: the FX takes the instrument's name, plus the preset for SoundFonts, for example "MuseScore General: Violin (SF Player)", so the FX chain, mixer and OSARA say what's loaded. It follows preset changes. If you rename the FX yourself, SF Player leaves your name alone. Turn it off with *Name the FX after the instrument* in the plug-in window; the setting applies to every SF Player.
+- **REAPER presets, FX chains and track templates**: REAPER doesn't tell plug-ins when it is saving a preset rather than a project, so these store the instrument path relative to the project that was open when you saved them. Used in a project in another folder, that path usually points to the wrong place, and sfz123 falls back to REAPER's media search, which only finds the file if it is in the project or one of REAPER's media folders. If the instrument isn't found, the status line says so; use Open or Recent to load it again. A project that has never been saved has no folder to be relative to, so anything saved from it stores an absolute path. Hosts that do report preset saves (CLAP's state-context extension) always get an absolute path.
+- **FX named after the instrument**: the FX takes the instrument's name, plus the preset for SoundFonts, for example "MuseScore General: Violin (sfz123)", so the FX chain, mixer and OSARA say what's loaded. It follows preset changes. If you rename the FX yourself, sfz123 leaves your name alone. Turn it off with *Name the FX after the instrument* in the plug-in window; the setting applies to every sfz123.
 - **Automation**: every parameter can be automated. Instrument controls are renamed after the loaded instrument (for example "Resonance (CC 70)"), and unused slots are hidden.
 - **MIDI controllers**: incoming CCs move the matching control, so the window and REAPER's parameter list stay in sync.
 - **Playing MIDI files (General MIDI)**: set *MIDI channel mode* to *General MIDI multitimbral*. Each channel then follows its own bank select and program changes, and channel 10 plays drums.
@@ -78,10 +78,10 @@ Additions around the core that SFLT didn't have: sustain and sostenuto pedals, p
 SF_TEST_FONT=/path/to/font.sf3 cargo test --release --manifest-path engine-sf2/Cargo.toml -- --nocapture
 
 # the built plug-in in a headless CLAP host (writes a WAV)
-build/sfplayer_test "build/SF Player.clap" /path/to/instrument.sfz /tmp/out.wav
+build/sfz123_test "build/sfz123.clap" /path/to/instrument.sfz /tmp/out.wav
 
 # the editor: snapshot plus accessibility tree (optional tab index)
-build/sfplayer_gui_test "build/SF Player.clap" /path/to/instrument.sf2 /tmp/gui.png 1
+build/sfz123_gui_test "build/sfz123.clap" /path/to/instrument.sf2 /tmp/gui.png 1
 ```
 
 ## Known limitations
@@ -97,4 +97,4 @@ build/sfplayer_gui_test "build/SF Player.clap" /path/to/instrument.sf2 /tmp/gui.
 - SFZ engine: [sfizz](https://github.com/sfztools/sfizz), BSD-2-Clause
 - [CLAP SDK](https://github.com/free-audio/clap), MIT
 
-SF Player is GPL-3.0-or-later (see `LICENSE`).
+sfz123 is GPL-3.0-or-later (see `LICENSE`).

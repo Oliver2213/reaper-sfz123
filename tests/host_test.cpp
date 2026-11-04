@@ -1,6 +1,6 @@
 // Minimal headless CLAP host used to test the built plugin bundle.
 //
-//   sfplayer_test "<path to SF Player.clap>" <instrument> [out.wav]
+//   sfz123_test "<path to sfz123.clap>" <instrument> [out.wav]
 //
 // Loads the instrument through the plugin's state (as a project reload would), plays a few
 // notes through the CLAP API and checks the output, optionally writing it to a WAV file.
@@ -26,7 +26,7 @@ static void hostRequestRestart(const clap_host*) {}
 static void hostRequestProcess(const clap_host*) {}
 static void hostRequestCallback(const clap_host*) { gCallback = true; }
 
-static clap_host gHost = { CLAP_VERSION_INIT, nullptr, "sfplayer_test", "test", "", "1", hostGetExtension, hostRequestRestart,
+static clap_host gHost = { CLAP_VERSION_INIT, nullptr, "sfz123_test", "test", "", "1", hostGetExtension, hostRequestRestart,
     hostRequestProcess, hostRequestCallback };
 
 static void logFn(const clap_host*, clap_log_severity s, const char* msg) { std::printf("  [plugin log %d] %s\n", (int)s, msg); }
@@ -217,7 +217,7 @@ int main(int argc, char** argv)
         return 2;
     }
     std::string bundle = argv[1];
-    std::string exe = bundle + "/Contents/MacOS/SF Player";
+    std::string exe = bundle + "/Contents/MacOS/sfz123";
     void* lib = dlopen(exe.c_str(), RTLD_NOW | RTLD_LOCAL);
     if (!lib) {
         std::fprintf(stderr, "dlopen failed: %s\n", dlerror());

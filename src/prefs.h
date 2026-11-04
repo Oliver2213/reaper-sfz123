@@ -1,4 +1,4 @@
-// User preferences shared by every SF Player instance.
+// User preferences shared by every sfz123 instance.
 #pragma once
 
 #include <string>

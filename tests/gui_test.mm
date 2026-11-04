@@ -1,5 +1,5 @@
 // Opens the plugin editor in a window, saves a PNG snapshot and prints the accessibility tree.
-//   sfplayer_gui_test "<SF Player.clap>" <instrument> <out.png> [tab-index]
+//   sfz123_gui_test "<sfz123.clap>" <instrument> <out.png> [tab-index]
 #import <Cocoa/Cocoa.h>
 #include <clap/clap.h>
 #include <dlfcn.h>
@@ -66,7 +66,7 @@ int main(int argc, char** argv)
         [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
 
         std::string bundle = argv[1];
-        void* lib = dlopen((bundle + "/Contents/MacOS/SF Player").c_str(), RTLD_NOW);
+        void* lib = dlopen((bundle + "/Contents/MacOS/sfz123").c_str(), RTLD_NOW);
         auto* entry = (const clap_plugin_entry*)dlsym(lib, "clap_entry");
         entry->init(bundle.c_str());
         auto* f = (const clap_plugin_factory*)entry->get_factory(CLAP_PLUGIN_FACTORY_ID);

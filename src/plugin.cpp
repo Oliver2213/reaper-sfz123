@@ -228,7 +228,7 @@ const char* const kFeatures[] = { CLAP_PLUGIN_FEATURE_INSTRUMENT, CLAP_PLUGIN_FE
 const clap_plugin_descriptor kDescriptor = {
     CLAP_VERSION_INIT,
     "com.sfplayer.sf-player", // stored in REAPER projects: never change
-    "SF Player",
+    "sfz123",
     "Blake Oliver",
     "https://github.com/Oliver2213/reaper-sfz123",
     "https://github.com/Oliver2213/reaper-sfz123#readme",
@@ -1127,7 +1127,7 @@ std::string Plugin::fxNameForInstrument() const
     bool singlePreset = info_.kind != InstrumentKind::Sfz && param(kMidiMode) == 0;
     if (singlePreset && info_.presets.size() > 1 && preset < info_.presets.size())
         name += ": " + info_.presets[preset].name;
-    return name + " (SF Player)";
+    return name + " (sfz123)";
 }
 
 void Plugin::updateFxName()
@@ -1137,9 +1137,10 @@ void Plugin::updateFxName()
     std::string current;
     if (!reaper_.fxRename(current))
         return;
-    static const std::string kSuffix = " (SF Player)";
-    bool ours = current.empty() || current == fxName_
-        || (current.size() > kSuffix.size() && current.compare(current.size() - kSuffix.size(), kSuffix.size(), kSuffix) == 0);
+    auto endsWith = [&](const std::string& suffix) {
+        return current.size() > suffix.size() && current.compare(current.size() - suffix.size(), suffix.size(), suffix) == 0;
+    };
+    bool ours = current.empty() || current == fxName_ || endsWith(" (sfz123)") || endsWith(" (SF Player)"); // SF Player was its old name
     if (!ours)
         return; // renamed by the user
     if (current != want)
