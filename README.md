@@ -119,8 +119,10 @@ build/sfz123_gui_test "build/sfz123.clap" /path/to/instrument.sf2 /tmp/gui.png 1
 
 ## Credits and license
 
-- SoundFont engine from [SFLT](https://estrobiologist.gumroad.com/l/sflt) by ash taylor, GPL-3.0
+- SoundFont engine: `sfl2` from [SFLT](https://estrobiologist.gumroad.com/l/sflt) 0.9.0 by ash taylor ([estroBiologist](https://github.com/estroBiologist)), GPL-3.0
 - SFZ engine: [sfizz](https://github.com/sfztools/sfizz), BSD-2-Clause
 - [CLAP SDK](https://github.com/free-audio/clap), MIT
+- The SoundFont reverb follows Freeverb by Jezar at Dreampoint (public domain), including its delay tunings
+- `THIRD_PARTY_NOTICES.txt` in each release has the licenses of everything sfizz and the Rust engine build in
 
 sfz123 is GPL-3.0-or-later (see `LICENSE`).

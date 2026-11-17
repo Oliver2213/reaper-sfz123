@@ -1,4 +1,5 @@
-// Reverb (Freeverb-style) and stereo chorus fed by the SoundFont's per-voice send amounts.
+// Reverb and stereo chorus fed by the SoundFont's per-voice send amounts. The reverb follows
+// Freeverb by Jezar at Dreampoint (public domain), with its comb and allpass tunings.
 
 use std::f32::consts::TAU;
 

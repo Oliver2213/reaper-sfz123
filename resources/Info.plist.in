@@ -21,6 +21,6 @@
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>NSHumanReadableCopyright</key>
-	<string>Copyright © 2026 Blake Oliver. GPL-3.0-or-later.</string>
+	<string>Copyright © 2026 Blake Oliver. GPL-3.0-or-later. Includes sfl2 from SFLT by ash taylor, and sfizz.</string>
 </dict>
 </plist>

@@ -38,7 +38,8 @@ section() {
 
 {
     echo "sfz123 is GPL-3.0-or-later (LICENSE.txt). Its SoundFont engine, sfl2, is from SFLT by"
-    echo "ash taylor, also GPL-3.0. sfz123 also contains the following software, under these licenses."
+    echo "ash taylor, also GPL-3.0. Its reverb follows Freeverb by Jezar at Dreampoint (public domain)."
+    echo "sfz123 also contains the following software, under these licenses."
 
     for c in "${COMPONENTS[@]}"; do
         section "${c%%|*}"
