@@ -108,7 +108,7 @@ build/sfz123_gui_test "build/sfz123.clap" /path/to/instrument.sf2 /tmp/gui.png 1
 
 ## Releases
 
-`scripts/release.sh` builds a universal plug-in (see the Rust note under Install), signs it with your Developer ID (hardened runtime), notarizes and staples it, and writes `dist/sfz123-<version>-mac.zip` with the license and this readme. The version comes from `project()` in `CMakeLists.txt`. Store notary credentials once with `xcrun notarytool store-credentials sfz123 --apple-id <email> --team-id <team>`. `SFZ123_SIGN_ID` and `SFZ123_NOTARY_PROFILE` override the identity and profile, and `SFZ123_SKIP_NOTARIZE=1` only signs.
+`scripts/release.sh` builds a universal plug-in (see the Rust note under Install), signs it with your Developer ID (hardened runtime), notarizes and staples it, and writes `dist/sfz123-<version>-mac.zip` with the license, this readme, and the licenses of the code sfz123 includes (`scripts/third_party_notices.sh`). The version comes from `project()` in `CMakeLists.txt`. Store notary credentials once with `xcrun notarytool store-credentials sfz123 --apple-id <email> --team-id <team>`. `SFZ123_SIGN_ID` and `SFZ123_NOTARY_PROFILE` override the identity and profile, and `SFZ123_SKIP_NOTARIZE=1` only signs.
 
 ## Known limitations
 

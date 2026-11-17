@@ -1,6 +1,6 @@
 #!/bin/bash
 # Builds a universal sfz123.clap, signs it with a Developer ID, notarizes and staples it,
-# and zips it with the license and readme into dist/sfz123-<version>-mac.zip.
+# and zips it with the license, third-party notices and readme into dist/sfz123-<version>-mac.zip.
 #   scripts/release.sh
 #   SFZ123_SKIP_NOTARIZE=1 scripts/release.sh   # sign only, for a local check
 #
@@ -44,6 +44,7 @@ mkdir -p "$STAGE" dist
 cp -R "$BUNDLE" "$STAGE/"
 cp LICENSE "$STAGE/LICENSE.txt"
 cp README.md "$STAGE/README.md"
+scripts/third_party_notices.sh "$STAGE/THIRD_PARTY_NOTICES.txt"
 ZIP="dist/sfz123-$VERSION-mac.zip"
 rm -f "$ZIP"
 ditto -c -k --keepParent "$STAGE" "$ZIP"
