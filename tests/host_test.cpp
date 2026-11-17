@@ -36,7 +36,7 @@ static void clearParams(const clap_host*, clap_id, clap_param_clear_flags) {}
 static void requestFlush(const clap_host*) {}
 static const clap_host_params gParams = { rescan, clearParams, requestFlush };
 
-// Stand-in for REAPER's "cockos.reaper_extension", reporting the project file in SFP_FAKE_PROJECT.
+// Stand-in for REAPER's "cockos.reaper_extension", reporting the project file in SFZ123_FAKE_PROJECT.
 static int gFakeProject;
 static void* fakeContext(const clap_host*, int sel) { return sel == 3 ? &gFakeProject : nullptr; }
 static void* fakeEnumProjects(int idx, char* fn, int size)
@@ -44,14 +44,14 @@ static void* fakeEnumProjects(int idx, char* fn, int size)
     if (idx != 0)
         return nullptr;
     if (fn)
-        std::snprintf(fn, (size_t)size, "%s", getenv("SFP_FAKE_PROJECT"));
+        std::snprintf(fn, (size_t)size, "%s", getenv("SFZ123_FAKE_PROJECT"));
     return &gFakeProject;
 }
-// resolve_fn2 stand-in: finds a missing file by name in SFP_FAKE_MEDIA_DIR
+// resolve_fn2 stand-in: finds a missing file by name in SFZ123_FAKE_MEDIA_DIR
 static void fakeResolve(const char* in, char* out, int size, const char*)
 {
     std::string name = std::string(in).substr(std::string(in).find_last_of('/') + 1);
-    const char* dir = getenv("SFP_FAKE_MEDIA_DIR");
+    const char* dir = getenv("SFZ123_FAKE_MEDIA_DIR");
     std::string found = dir ? std::string(dir) + "/" + name : in;
     FILE* f = std::fopen(found.c_str(), "rb");
     std::snprintf(out, (size_t)size, "%s", f ? found.c_str() : in);
@@ -86,7 +86,7 @@ static void fakeSaveAsWithCopy(const std::string& newProjectDir)
         reg.second(ud, 0, (void*)dest.c_str());
     }
     std::printf("  [reaper] copied %zu files into %s\n", gRegistered.size(), newProjectDir.c_str());
-    setenv("SFP_FAKE_PROJECT", (newProjectDir + "/song.rpp").c_str(), 1);
+    setenv("SFZ123_FAKE_PROJECT", (newProjectDir + "/song.rpp").c_str(), 1);
 }
 static void* fakeGetFunc(const char* name)
 {
@@ -107,7 +107,7 @@ static struct {
 
 static const void* hostGetExtension(const clap_host*, const char* id)
 {
-    if (!std::strcmp(id, "cockos.reaper_extension") && getenv("SFP_FAKE_PROJECT"))
+    if (!std::strcmp(id, "cockos.reaper_extension") && getenv("SFZ123_FAKE_PROJECT"))
         return &gFakeReaper;
     if (!std::strcmp(id, CLAP_EXT_LOG))
         return &gLog;
@@ -211,7 +211,7 @@ static void writeWav(const char* path, const std::vector<float>& l, const std::v
 
 int main(int argc, char** argv)
 {
-    setenv("SFP_NO_RECENTS", "1", 1); // keep test loads out of the user's recent instruments
+    setenv("SFZ123_NO_RECENTS", "1", 1); // keep test loads out of the user's recent instruments
     if (argc < 3) {
         std::fprintf(stderr, "usage: %s <plugin.clap> <instrument> [out.wav]\n", argv[0]);
         return 2;
@@ -248,7 +248,7 @@ int main(int argc, char** argv)
     // load the instrument via state, like REAPER restoring a project
     Stream st;
     st.data = std::string("SFZ123 1\npath=") + argv[2] + "\n";
-    if (const char* extra = getenv("SFP_STATE_EXTRA")) // e.g. "preset=0:3\np10=0\n"
+    if (const char* extra = getenv("SFZ123_STATE_EXTRA")) // e.g. "preset=0:3\np10=0\n"
         st.data += extra;
     clap_istream is { &st, sRead };
     auto t0 = std::chrono::steady_clock::now();
@@ -347,7 +347,7 @@ int main(int argc, char** argv)
         }
     }
 
-    if (const char* copyTo = getenv("SFP_FAKE_COPY_TO")) {
+    if (const char* copyTo = getenv("SFZ123_FAKE_COPY_TO")) {
         std::printf("  %zu files registered with REAPER\n", gRegistered.size());
         fakeSaveAsWithCopy(copyTo);
         Stream mid;

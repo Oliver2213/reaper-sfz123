@@ -58,7 +58,7 @@ static void dumpAx(id element, int depth)
 
 int main(int argc, char** argv)
 {
-    setenv("SFP_NO_RECENTS", "1", 1); // keep test loads out of the user's recent instruments
+    setenv("SFZ123_NO_RECENTS", "1", 1); // keep test loads out of the user's recent instruments
     @autoreleasepool {
         if (argc < 4)
             return 2;

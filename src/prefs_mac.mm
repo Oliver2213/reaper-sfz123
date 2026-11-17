@@ -27,7 +27,7 @@ std::vector<std::string> recentInstruments()
 
 void addRecentInstrument(const std::string& path)
 {
-    if (path.empty() || std::getenv("SFP_NO_RECENTS"))
+    if (path.empty() || std::getenv("SFZ123_NO_RECENTS"))
         return;
     NSString* p = [NSString stringWithUTF8String:path.c_str()];
     if (!p)
